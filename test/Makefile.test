@@ -1,0 +1,21 @@
+TOP ?= aegis.Top
+BUILD_DIR ?= ../build
+
+.PHONY: test verilog check
+
+verilog:
+	make -C .. verilog
+
+test: verilog
+	cd $(BUILD_DIR) && \
+	verilator --cc --top-module Top \
+	  -Wno-fatal \
+	  --Mdir obj_dir \
+	  ../build/rtl/Top.sv \
+	  --exe ../test/test_bench.cpp 2>&1 | tail -5
+	cd $(BUILD_DIR) && make -C obj_dir -f VTop.mk 2>&1 | tail -5
+	cd $(BUILD_DIR) && ./obj_dir/VTop
+
+check:
+	@echo "Checking build output..."
+	ls -la ../build/rtl/ 2>/dev/null || echo "No build output yet"

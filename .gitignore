@@ -1,0 +1,32 @@
+build/
+out/
+target/
+*.class
+*.jar
+*.log
+*.treadmill
+.DS_Store
+node_modules/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.swp
+*.swo
+mill
+
+# Large build artifacts
+*.lib
+*.qpg
+*.vcd
+*.fsdb
+*.tar.gz
+*.deb
+*.mtx
+
+# Generated
+build/
+out/
+target/
+project/target/
+project/project/

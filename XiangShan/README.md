@@ -1,0 +1,196 @@
+# XiangShan
+
+XiangShan (香山) is an open-source high-performance RISC-V processor project.
+
+English | [中文](README.zh-cn.md)
+
+## Documentation
+
+XiangShan's documentation is available at [docs.xiangshan.cc](https://docs.xiangshan.cc).
+
+XiangShan Design Document for Kunminghu V2R2 has been published separately. You can find it at [docs.xiangshan.cc/projects/design](https://docs.xiangshan.cc/projects/design/).
+
+XiangShan User Guide has been published separately. You can find it at [docs.xiangshan.cc/projects/user-guide](https://docs.xiangshan.cc/projects/user-guide/) or [XiangShan-User-Guide/releases](https://github.com/OpenXiangShan/XiangShan-User-Guide/releases).
+
+We are using [Weblate](https://hosted.weblate.org/projects/openxiangshan/) to translate documentation into English and other languages. Your contributions are welcome—come and help us improve it!
+
+All XiangShan documents are licensed under the CC-BY-4.0.
+
+## Publications
+
+### MICRO 2022: Towards Developing High Performance RISC-V Processors Using Agile Methodology
+
+Our paper introduces XiangShan and the practice of agile development methodology on high performance RISC-V processors.
+It covers some representative tools we have developed and used to accelerate the chip development process, including design, functional verification, debugging, performance validation, etc.
+This paper is awarded all three available badges for artifact evaluation (Available, Functional, and Reproduced).
+
+![Artifacts Available](https://talks-pubs.xiangshan.cc/publications/images/artifacts_available_dl.jpg)
+![Artifacts Evaluated — Functional](https://talks-pubs.xiangshan.cc/publications/images/artifacts_evaluated_functional_dl.jpg)
+![Results Reproduced](https://talks-pubs.xiangshan.cc/publications/images/results_reproduced_dl.jpg)
+
+[Paper PDF](https://talks-pubs.xiangshan.cc/publications/micro2022-xiangshan.pdf) | [IEEE Xplore](https://ieeexplore.ieee.org/abstract/document/9923860) | [BibTeX](https://talks-pubs.xiangshan.cc/publications/micro2022-xiangshan.bib) | [Presentation Slides](https://talks-pubs.xiangshan.cc/publications/micro2022-xiangshan-slides.pdf) | [Presentation Video](https://www.bilibili.com/video/BV1FB4y1j7Jy)
+
+## Follow us
+
+Wechat/微信：香山开源处理器
+
+<div align=left><img width="340" height="117" src="images/wechat.png"/></div>
+
+Zhihu/知乎：[香山开源处理器](https://www.zhihu.com/people/openxiangshan)
+
+Weibo/微博：[香山开源处理器](https://weibo.com/u/7706264932)
+
+You can contact us through [our mailing list](mailto:xiangshan-all@ict.ac.cn). All mails from this list will be archived [here](https://www.mail-archive.com/xiangshan-all@ict.ac.cn/).
+
+## Architecture
+
+The first stable micro-architecture of XiangShan is called Yanqihu (雁栖湖) and is [on the yanqihu branch](https://github.com/OpenXiangShan/XiangShan/tree/yanqihu), which has been developed since June 2020.
+
+The second stable micro-architecture of XiangShan is called Nanhu (南湖) and is [on the nanhu branch](https://github.com/OpenXiangShan/XiangShan/tree/nanhu).
+
+The third-generation XiangShan microarchitecture, Kunminghu (昆明湖), is under active development on the `kunminghu-v2` and `kunminghu-v3` branches.
+
+The micro-architecture overview of Kunminghu-V2 is shown below.
+
+![xs-arch-kunminghu](images/xs-arch-kunminghu.svg)
+
+## Branch Maintenance Status
+
+| Generation-Version | Branch                                                                                  | Maintained?  | Active Development? |
+| ------------------ | --------------------------------------------------------------------------------------- | ------------ | ------------------- |
+| Yanqihu            | [yanqihu](https://github.com/OpenXiangShan/XiangShan/tree/yanqihu)                      | ✅ (minimum) |                     |
+| Nanhu-V2           | [nanhu](https://github.com/OpenXiangShan/XiangShan/tree/nanhu)                          | ✅ (minimum) |                     |
+| Nanhu-V3           | [Siudya/Nanhu](https://github.com/Siudya/Nanhu/tree/main)                               |              |                     |
+| Nanhu-V5           | [OpenXiangShan-Nanhu/OpenNanhu-V5](https://github.com/OpenXiangShan-Nanhu/OpenNanhu-V5) | ✅           | ✅                  |
+| Kunminghu-V2       | [kunminghu-v2](https://github.com/OpenXiangShan/XiangShan/tree/kunminghu-v2)            | ✅           |                     |
+| Kunminghu-V3       | [kunminghu-v3](https://github.com/OpenXiangShan/XiangShan/tree/kunminghu-v3)            | ✅           | ✅                  |
+
+At the moment, `kunminghu-v3` is still evolving rapidly and its functionality may not yet be stable. If you plan to use XiangShan for research, verification, or downstream applications, we recommend prioritizing `kunminghu-v2`.
+
+This section is time-sensitive. If you believe any information here is outdated, please let us know in an issue and we will update it as soon as possible.
+
+Last updated: 2026/06/30
+
+## Sub-directories Overview
+
+Some of the key directories are shown below.
+
+```
+.
+├── src
+│   └── main/scala         # design files
+│       ├── device         # virtual device for simulation
+│       ├── system         # SoC wrapper
+│       ├── top            # top module
+│       ├── utils          # utilization code
+│       └── xiangshan      # main design code
+│           └── transforms # some useful firrtl transforms
+├── scripts                # scripts for agile development
+├── yunsuan                # yunsuan submodule of XiangShan
+├── XSCache                # cache subsystem of XiangShan
+├── difftest               # difftest co-simulation framework
+└── ready-to-run           # pre-built simulation images
+```
+
+## IDE Support
+
+### bsp
+```
+make bsp
+```
+
+### IDEA
+```
+make idea
+```
+
+
+## Generate Verilog
+
+* Run `make verilog` to generate verilog code. This generates multiple `.sv` files in the `build/rtl/` folder (e.g., `build/rtl/XSTop.sv`).
+* Refer to `Makefile` for more information.
+
+
+
+## Run Programs by Simulation
+
+### Prepare environment
+
+* Set environment variable `NEMU_HOME` to the **absolute path** of the [NEMU project](https://github.com/OpenXiangShan/NEMU).
+* Set environment variable `NOOP_HOME` to the **absolute path** of the XiangShan project.
+* Set environment variable `AM_HOME` to the **absolute path** of the [AM project](https://github.com/OpenXiangShan/nexus-am).
+* Install `mill`. Refer to [the Manual section in this guide](https://mill-build.org/mill/cli/installation-ide.html#_bootstrap_scripts).
+* Clone this project and run `make init` to initialize submodules.
+
+### Run with simulator
+
+* Install [Verilator](https://verilator.org/guide/latest/), the open-source Verilog simulator.
+* Run `make emu` to build the C++ simulator `./build/emu` with Verilator.
+* Refer to `./build/emu --help` for run-time arguments of the simulator.
+* Refer to `Makefile` and `verilator.mk` for more information.
+
+Example:
+
+```bash
+make emu CONFIG=MinimalConfig EMU_THREADS=2 -j10
+./build/emu -b 0 -e 0 -i ./ready-to-run/coremark-2-iteration.bin --diff ./ready-to-run/riscv64-nemu-interpreter-so
+```
+### Run with xspdb
+
+There are two ways to use xspdb:
+
+1. Quick Start with Prebuilt Binaries
+    * **Why choose this?** It is lightweight and requires no compilation. A standard Python environment is enough to run the full XiangShan experience with low memory usage.
+    * **Step 1: Download** Get the latest XSPdb from the run summary of the repository's [Actions](https://github.com/OpenXiangShan/XiangShan/actions/workflows/release.yml?query=is%3Asuccess+event%3Apush) workflow.
+    * **Step 2: Extract & Run**
+
+2. Build from source code
+    * Install [picker](https://github.com/XS-MLVP/picker), a verification tool that supports high-level languages.
+    * Run `make pdb` to build XiangShan Python binaries.
+    * Run `make pdb-run` to run XiangShan binaries.
+
+Example output and interaction:
+
+```bash 
+$ make pdb-run
+[Info] Set PMEM_BASE to 0x80000000 (Current: 0x80000000)
+[Info] Set FIRST_INST_ADDRESS to 0x80000000 (Current: 0x80000000)
+Using simulated 32768B flash
+[Info] reset dut complete
+> XiangShan/scripts/pdb-run.py(13)run()
+-> while True:
+(XiangShan) xload ready-to-run/microbench.bin   # Load binary (Tab-compatible)
+(XiangShan) xwatch_commit_pc 0x80000004         # Set watchpoint
+(XiangShan) xistep 3                            # Step until the next three instructions commit; stops at the watchpoint if hit
+[Info] Find break point (Inst commit), break (step 2107 cycles) at cycle: 2207 (0x89f)
+[Info] Find break point (Inst commit, Target commit), break (step 2108 cycles) at cycle: 2208 (0x8a0)
+(XiangShan) xpc                                 # Print PC info
+PC[0]: 0x80000000    Instr: 0x00000093
+PC[1]: 0x80000004    Instr: 0x00000113
+PC[2]: 0x0    Instr: 0x0
+...
+PC[7]: 0x0    Instr: 0x0
+(XiangShan) xistep 1000000                      # Execute until the end of the binary
+[Info] Find break point (Inst commit), break (step 2037 cycles) at cycle: 2207 (0x89f)
+[Info] Find break point (Inst commit), break (step 2180 cycles) at cycle: 2207 (0x89f)
+...
+HIT GOOD LOOP at pc = 0xf0001cb0
+```
+
+## Troubleshooting Guide
+
+[Troubleshooting Guide](https://github.com/OpenXiangShan/XiangShan/wiki/Troubleshooting-Guide)
+
+## Acknowledgement
+
+The implementation of XiangShan is inspired by several key papers. We list these papers in XiangShan document, see: [Acknowledgements](https://docs.xiangshan.cc/zh-cn/latest/acknowledgments/). We very much encourage and expect that more academic innovations can be realised based on XiangShan in the future.
+
+## LICENSE
+
+Copyright © 2020-2026 Institute of Computing Technology, Chinese Academy of Sciences.
+
+Copyright © 2021-2026 Beijing Institute of Open Source Chip
+
+Copyright © 2020-2022 by Peng Cheng Laboratory.
+
+XiangShan is licensed under [Mulan PSL v2](LICENSE).

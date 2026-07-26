@@ -1,0 +1,101 @@
+name: Performance Regression Trigger
+
+run-name: "${{ github.event.inputs.note }} - ${{ github.event.inputs.test_branch }} - ${{ github.event.inputs.benchmark_type }} - ${{ github.event.inputs.xs_config }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: Test note, will be displayed in the title
+        required: false
+        type: string
+        default: Performance Regression
+      test_branch:
+        description: Branch or commit to run performance test on
+        required: false
+        type: string
+        default: kunminghu-v3
+      emulator:
+        description: emulator to use
+        required: false
+        type: choice
+        options:
+          - gsim
+          - verilator
+        default: gsim
+      xs_config:
+        description: Config for XiangShan core
+        required: false
+        type: choice
+        options:
+          - DefaultConfig
+          - BackendV2Config
+        default: DefaultConfig
+      benchmark_type:
+        description: Benchmark type
+        required: false
+        type: choice
+        options:
+          - gcc15-spec06-0.3c
+          - gcc15-spec06-1.0c
+          - gcc15-spec06-legacy-0.3c
+          - gcc15-spec06-legacy-0.8c
+          - gcc15-spec06-legacy-1.0c
+          - xscc-spec06-0.3c
+          - xscc-spec06-0.8c
+          - xscc-spec06-1.0c
+          - gcc15-rv64gc-spec26-0.3c
+          - gcc15-rv64gc-spec26-1.0c
+          - gcc12-spec06-0.3c
+          - gcc12-spec06-0.8c
+          - gcc12-spec06-1.0c
+          - custom
+          - dryrun
+        default: gcc15-spec06-1.0c
+      benchmarks:
+        description: Specific benchmarks to run (comma-separated), leave empty to run all
+        required: false
+        type: string
+      cst_file:
+        description: Constantin file path (empty for default init setting, or file path for specific file)
+        required: false
+        type: string
+      enable_db:
+        description: Enable ChiselDB dump (High disk usage, 4~16G/ckpt, use with caution!)
+        required: false
+        type: boolean
+        default: false
+      enable_rolling:
+        description: Enable rolling DB dump, which implies enable_db (High disk usage, 4~16G/ckpt, use with caution!)
+        required: false
+        type: boolean
+        default: false
+      servers:
+        description: Servers to run emulation on, leave empty to let the script select
+        required: false
+        type: string
+      checkpoint_path:
+        description: Directory for SPEC checkpoints. Ignore this unless benchmark_type is set to custom
+        required: false
+        type: string
+      json_path:
+        description: JSON file path for SPEC checkpoints. Ignore this unless benchmark_type is set to custom
+        required: false
+        type: string
+
+jobs:
+  performance-test:
+    uses: ./.github/workflows/perf-template.yml
+    with:
+        test_branch: ${{ github.event.inputs.test_branch }}
+        emulator: ${{ github.event.inputs.emulator }}
+        xs_config: ${{ github.event.inputs.xs_config }}
+        benchmark_type: ${{ github.event.inputs.benchmark_type }}
+        benchmarks: ${{ github.event.inputs.benchmarks }}
+        cst_file: ${{ github.event.inputs.cst_file }}
+        enable_db: ${{ fromJSON(github.event.inputs.enable_db) }}
+        enable_rolling: ${{ fromJSON(github.event.inputs.enable_rolling) }}
+        servers: ${{ github.event.inputs.servers }}
+        checkpoint_path: ${{ github.event.inputs.checkpoint_path }}
+        json_path: ${{ github.event.inputs.json_path }}
+        perf_report_dir: /nfs/home/cirunner/perf-report-custom

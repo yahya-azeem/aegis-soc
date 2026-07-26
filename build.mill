@@ -1,0 +1,21 @@
+import $ivy.`org.chipsalliance::chisel:7.3.0`
+
+import mill._
+import mill.scalalib._
+import mill.scalalib.scalafmt.ScalafmtModule
+
+trait ChiselModule extends SbtModule with ScalafmtModule {
+  def scalaVersion = "2.13.17"
+  def scalacOptions = Seq("-language:reflectiveCalls", "-Ymacro-annotations", "-Ytasty-reader")
+  def ivyDeps = Agg(ivy"org.chipsalliance::chisel:7.3.0")
+  def scalacPluginIvyDeps = Agg(ivy"org.chipsalliance:::chisel-plugin:7.3.0")
+}
+
+object aegis extends ChiselModule {
+  def mainClass = Some("aegis.elaborate.TopElaborate")
+}
+
+object test extends ChiselModule {
+  def moduleDeps = Seq(aegis)
+  def mainClass = Some("aegis.test.TopTest")
+}

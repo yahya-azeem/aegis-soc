@@ -1,0 +1,49 @@
+/** *************************************************************************************
+  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+  * Copyright (c) 2020-2021 Peng Cheng Laboratory
+  *
+  * XiangShan is licensed under Mulan PSL v2.
+  * You can use this software according to the terms and conditions of the Mulan PSL v2.
+  * You may obtain a copy of Mulan PSL v2 at:
+  * http://license.coscl.org.cn/MulanPSL2
+  *
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+  *
+  * See the Mulan PSL v2 for more details.
+  * *************************************************************************************
+  */
+
+package xscache.coupledL2
+
+import chisel3._
+import chisel3.util._
+import org.chipsalliance.cde.config.Parameters
+import freechips.rocketchip.tilelink.TLBundle
+import utility._
+import xscache.coupledL2.prefetch._
+
+trait BaseOuterBundle
+
+abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Bundle {
+  val in = Flipped(TLBundle(edgeIn.bundle))
+  val out: T_OUT
+  val sliceId = Input(UInt(bankBits.W))
+  val l1Hint = DecoupledIO(new L2ToL1HintInsideL2())
+  val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
+  val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
+  val pfSent = topDownOpt.map(_ => ValidIO(UInt(MemReqSource.reqSourceBits.W)))
+  val pfStatInMSHR = topDownOpt.map(_ => Output(new PfStatInMSHRBundle()))
+  val error = DecoupledIO(new L2CacheErrorInfo())
+  val l2Miss = Output(Bool())
+  val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
+  val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
+  // statistics
+  val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
+  val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
+}
+
+abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module with HasPerfEvents {
+  val io: BaseSliceIO[T_OUT]
+}
