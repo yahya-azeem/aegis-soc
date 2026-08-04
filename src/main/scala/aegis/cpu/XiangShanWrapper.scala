@@ -28,7 +28,9 @@ class XiangShanWrapper(implicit config: AegisConfig) extends Module {
     crossbar.io.core(i) <> l2_banks(i).io.crossbar
   }
   crossbar.io.l3 <> l3_slice.io.crossbar
-  l3_slice.io.mem <> io.axi
+
+  io.axi := DontCare
+  l3_slice.io.mem := DontCare
 
   io.soc.ipi := VecInit(cores.map(_.io.ipi)).asUInt
   io.soc.msi := VecInit(cores.map(_.io.msi)).asUInt
@@ -36,7 +38,7 @@ class XiangShanWrapper(implicit config: AegisConfig) extends Module {
 
 class XiangShanCore extends Module {
   val io = IO(new Bundle {
-    val l2 = Flipped(new L2Interface)
+    val l2 = new L2Interface
     val ipi = Output(Bool())
     val msi = Output(Bool())
   })
@@ -50,14 +52,16 @@ class L2CacheBank extends Module {
     val core = Flipped(new L2Interface)
     val crossbar = new CrossbarInterface
   })
+  io.core := DontCare
   io.crossbar := DontCare
 }
 
 class L3VCache(val sizeKB: Int) extends Module {
   val io = IO(new Bundle {
     val crossbar = Flipped(new CrossbarInterface)
-    val mem = new AXIBundle(64, 512)
+    val mem = Flipped(new AXIBundle(64, 512))
   })
+  io.crossbar := DontCare
   io.mem := DontCare
 }
 
@@ -66,25 +70,6 @@ class CoreCrossbar(val nCores: Int) extends Module {
     val core = Vec(nCores, Flipped(new CrossbarInterface))
     val l3 = new CrossbarInterface
   })
+  io.core := DontCare
   io.l3 := DontCare
-}
-
-class CPUIO extends Bundle {
-  val ipi = Output(UInt(8.W))
-  val msi = Output(UInt(8.W))
-}
-
-class L2Interface extends Bundle {
-  val addr = Output(UInt(64.W))
-  val data = Output(UInt(512.W))
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-}
-
-class CrossbarInterface extends Bundle {
-  val addr = Output(UInt(64.W))
-  val data = Output(UInt(512.W))
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val source = Output(UInt(4.W))
 }

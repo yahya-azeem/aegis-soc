@@ -13,7 +13,7 @@ class RayFlexWrapper(val nPipelines: Int = 4) extends Module {
     val resp = Decoupled(new Bundle {
       val data = UInt(512.W)
     })
-    val mem = new AXIBundle(64, 256)
+    val mem = Flipped(new AXIBundle(64, 256))
   })
 
   val p = VecInit(Seq.fill(nPipelines) {
@@ -37,7 +37,7 @@ class RayFlexWrapper(val nPipelines: Int = 4) extends Module {
     grant := Mux(grant === (nPipelines - 1).U, 0.U, grant + 1.U)
   }
 
-  val resp_arb = Module(new RRArbiter(chiselTypeOf(p(0).resp.bits), nPipelines, true))
+  val resp_arb = Module(new RRArbiter(chiselTypeOf(p(0).resp.bits), nPipelines))
   for (i <- 0 until nPipelines) {
     resp_arb.io.in(i) <> p(i).resp
   }

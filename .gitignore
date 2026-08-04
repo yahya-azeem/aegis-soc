@@ -30,3 +30,5 @@ out/
 target/
 project/target/
 project/project/
+.bsp/
+.opencode/

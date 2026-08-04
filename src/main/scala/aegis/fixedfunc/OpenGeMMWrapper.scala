@@ -13,7 +13,7 @@ class OpenGeMMWrapper(val tileSize: Int = 128) extends Module {
     val resp = Decoupled(new Bundle {
       val data = UInt(512.W)
     })
-    val mem = new AXIBundle(64, 512)
+    val mem = Flipped(new AXIBundle(64, 512))
   })
 
   val systolic = Module(new SystolicArray(tileSize))
@@ -32,14 +32,14 @@ class SystolicArray(val tileSize: Int) extends Module {
     val resp = Decoupled(new Bundle {
       val data = UInt(512.W)
     })
-    val mem = new AXIBundle(64, 512)
+    val mem = Flipped(new AXIBundle(64, 512))
   })
 
   val weight_mem = SyncReadMem(tileSize * tileSize, UInt(16.W))
   val input_mem = SyncReadMem(tileSize * tileSize, UInt(16.W))
   val output_mem = SyncReadMem(tileSize * tileSize, UInt(32.W))
 
-  val s_idle :: s_load_w :: s_load_i :: s_compute :: s_store :: Nil = Enum(4)
+  val s_idle :: s_load_w :: s_load_i :: s_compute :: s_store :: Nil = Enum(5)
   val state = RegInit(s_idle)
   val addr = RegInit(0.U(log2Ceil(tileSize * tileSize).W))
   val accum = RegInit(0.U(32.W))

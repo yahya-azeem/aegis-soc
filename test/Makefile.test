@@ -8,13 +8,13 @@ verilog:
 
 test: verilog
 	cd $(BUILD_DIR) && \
-	verilator --cc --top-module Top \
+	verilator --cc --top-module Aegis \
 	  -Wno-fatal \
 	  --Mdir obj_dir \
-	  ../build/rtl/Top.sv \
+	  ../build/rtl/Aegis.sv \
 	  --exe ../test/test_bench.cpp 2>&1 | tail -5
-	cd $(BUILD_DIR) && make -C obj_dir -f VTop.mk 2>&1 | tail -5
-	cd $(BUILD_DIR) && ./obj_dir/VTop
+	cd $(BUILD_DIR) && make -C obj_dir -f VAegis.mk 2>&1 | tail -5
+	cd $(BUILD_DIR) && ./obj_dir/VAegis
 
 check:
 	@echo "Checking build output..."

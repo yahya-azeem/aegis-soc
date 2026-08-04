@@ -16,6 +16,9 @@ class AXITileLinkBridge(
   val s_idle :: s_read :: s_write :: s_resp :: Nil = Enum(4)
   val state = RegInit(s_idle)
 
+  io.axi := DontCare
+  io.tl := DontCare
+
   val addr_reg = Reg(UInt(64.W))
   val data_reg = Reg(UInt(axiDataWidth.W))
   val is_write = Reg(Bool())
@@ -70,13 +73,4 @@ class AXITileLinkBridge(
   io.tl.a_valid := false.B
   io.tl.a_bits := 0.U
   io.tl.d_ready := false.B
-}
-
-class TileLinkBundle(val beatBytes: Int) extends Bundle {
-  val a_valid = Output(Bool())
-  val a_ready = Input(Bool())
-  val a_bits = Output(UInt(64.W))
-  val d_valid = Input(Bool())
-  val d_ready = Output(Bool())
-  val d_bits = Input(UInt((beatBytes * 8).W))
 }

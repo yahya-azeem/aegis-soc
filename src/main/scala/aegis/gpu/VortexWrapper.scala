@@ -20,14 +20,15 @@ class VortexWrapper(implicit config: AegisConfig) extends Module {
     clusters(i).io.mem <> l2_cache.io.cluster(i)
   }
 
-  l2_cache.io.mem <> io.axi
+  io.axi := DontCare
+  l2_cache.io.mem := DontCare
 
   io.soc.irq := clusters.map(_.io.irq).reduce(_ || _)
 }
 
 class VortexCluster extends Module {
   val io = IO(new Bundle {
-    val mem = Flipped(new MemInterface)
+    val mem = new MemInterface
     val irq = Output(Bool())
   })
 
@@ -36,6 +37,7 @@ class VortexCluster extends Module {
     val vector = new VectorPipeline
   })
 
+  cores := DontCare
   io.mem := DontCare
   io.irq := false.B
 }
@@ -52,14 +54,10 @@ class VectorPipeline extends Bundle {
   val valid = Output(Bool())
 }
 
-class GPUIO extends Bundle {
-  val irq = Output(Bool())
-}
-
 class GPUL2Cache extends Module {
   val io = IO(new Bundle {
     val cluster = Vec(8, Flipped(new MemInterface))
-    val mem = new AXIBundle(64, 512)
+    val mem = Flipped(new AXIBundle(64, 512))
   })
 
   val arb = Module(new RRArbiter(new MemReq, 8))
@@ -68,8 +66,10 @@ class GPUL2Cache extends Module {
     arb.io.in(i).valid := io.cluster(i).req.valid
     arb.io.in(i).bits := io.cluster(i).req.bits
     io.cluster(i).req.ready := arb.io.in(i).ready
+    io.cluster(i).resp := DontCare
   }
 
+  arb.io.out.ready := false.B
   io.mem := DontCare
 }
 

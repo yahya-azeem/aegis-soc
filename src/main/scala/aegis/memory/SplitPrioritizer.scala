@@ -6,7 +6,7 @@ import aegis._
 
 class SplitPrioritizer(implicit config: AegisConfig) extends Module {
   val io = IO(new Bundle {
-    val soc = Flipped(new MemPort)
+    val soc = new MemPort
     val mem_axi = new AXIBundle(config.axiAddrWidth, config.axiDataWidth)
     val mode = Input(UInt(2.W))
   })
@@ -39,8 +39,11 @@ class SplitPrioritizer(implicit config: AegisConfig) extends Module {
   hbm_ctrl.io.write := io.soc.cpu_req.bits.isWrite
   hbm_ctrl.io.data_in := io.soc.cpu_req.bits.data
   hbm_ctrl.io.open_page := use_open_page
+  hbm_ctrl.io.ready := true.B
 
-  hbm_ctrl.io.mem_axi <> io.mem_axi
+  io.soc := DontCare
+  hbm_ctrl.io.mem_axi := DontCare
+  io.mem_axi := DontCare
 }
 
 class HBM3Controller extends Module {
@@ -52,12 +55,13 @@ class HBM3Controller extends Module {
     val valid = Output(Bool())
     val ready = Input(Bool())
     val open_page = Input(Bool())
-    val mem_axi = new AXIBundle(64, 1024)
+    val mem_axi = new AXIBundle(64, 512)
   })
 
   val pg_enable = RegInit(false.B)
   pg_enable := io.open_page
 
+  io.mem_axi := DontCare
   io.mem_axi.AWADDR := io.addr
   io.mem_axi.AWVALID := io.write
   io.mem_axi.WDATA := io.data_in

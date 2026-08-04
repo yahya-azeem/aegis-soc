@@ -1,6 +1,8 @@
 package aegis.elaborate
 
 import aegis._
+import aegis.Top
+import circt.stage.ChiselStage
 
 object TopElaborate extends App {
   implicit val config: AegisConfig = AegisConfig()
@@ -10,8 +12,12 @@ object TopElaborate extends App {
   println(s"Mem: ${config.mem.totalSizeGB}GB HBM3 @ ${config.mem.hbmFreqGbps}Gbps")
   println(s"Fixed: RT=${config.fixedFunc.rayTracing}, AI=${config.fixedFunc.aiUpscaling}")
   println()
-  println("To generate Verilog:")
-  println("  sbt 'runMain aegis.elaborate.TopElaborate'")
-  println("To run tests:")
-  println("  sbt test")
+
+  val verilog = ChiselStage.emitSystemVerilog(new Top()(config))
+  val outDir = "build/rtl"
+  val outFile = new java.io.File("build", "rtl")
+  outFile.mkdirs()
+  val pw = new java.io.PrintWriter(new java.io.File(outFile, s"${config.socName}.sv"))
+  try pw.write(verilog) finally pw.close()
+  println(s"Generated Verilog: ${outFile}/${config.socName}.sv")
 }

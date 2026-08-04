@@ -1,5 +1,5 @@
 #include <verilated.h>
-#include "VTop.h"
+#include "VAegis.h"
 #include <iostream>
 
 vluint64_t main_time = 0;
@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     Verilated::traceEverOn(true);
 
-    VTop* top = new VTop;
+    VAegis* top = new VAegis;
 
     top->clock = 0;
     top->reset = 1;
