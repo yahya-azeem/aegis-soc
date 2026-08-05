@@ -54,23 +54,51 @@ class VectorPipeline extends Bundle {
   val valid = Output(Bool())
 }
 
-class GPUL2Cache extends Module {
+class GPUL2Cache(val nClusters: Int = 8, val latency: Int = 2) extends Module {
   val io = IO(new Bundle {
-    val cluster = Vec(8, Flipped(new MemInterface))
+    val cluster = Vec(nClusters, Flipped(new MemInterface))
     val mem = Flipped(new AXIBundle(64, 512))
   })
 
-  val arb = Module(new RRArbiter(new MemReq, 8))
+  val last = RegInit(0.U(log2Ceil(nClusters).W))
+  val in_flight = RegInit(false.B)
+  val serving = RegInit(0.U(log2Ceil(nClusters).W))
+  val L = RegInit(0.U(log2Ceil(latency).W))
+  val echo = Reg(UInt(512.W))
 
-  for (i <- 0 until 8) {
-    arb.io.in(i).valid := io.cluster(i).req.valid
-    arb.io.in(i).bits := io.cluster(i).req.bits
-    io.cluster(i).req.ready := arb.io.in(i).ready
-    io.cluster(i).resp := DontCare
+  val v = (0 until nClusters).map(i => io.cluster(i).req.valid)
+  val lower = (0 until nClusters).map(i => (i.U > last) && v(i))
+  val upper = (0 until nClusters).map(i => (i.U <= last) && v(i))
+  val any = lower.reduce(_ || _) || upper.reduce(_ || _)
+
+  val sel = Mux(lower.reduce(_ || _), PriorityEncoder(lower), PriorityEncoder(upper))
+  val onehot = (0 until nClusters).map(i => i.U === sel)
+
+  io.mem := DontCare
+
+  for (i <- 0 until nClusters) {
+    io.cluster(i).req.ready := !in_flight && any && (i.U === sel)
+    io.cluster(i).resp.valid := in_flight && (L === 0.U) && io.cluster(i).resp.ready && (i.U === serving)
+    io.cluster(i).resp.bits := echo
   }
 
-  arb.io.out.ready := false.B
-  io.mem := DontCare
+  when(!in_flight && any) {
+    in_flight := true.B
+    serving := sel
+    last := sel
+    L := (latency - 1).U
+    echo := Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.data))
+  }
+
+  when(in_flight) {
+    when(L === 0.U) {
+      when(io.cluster(serving).resp.ready) {
+        in_flight := false.B
+      }
+    }.otherwise {
+      L := L - 1.U
+    }
+  }
 }
 
 

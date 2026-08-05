@@ -2,25 +2,13 @@ package aegis.fixedfunc
 
 import chisel3._
 import chisel3.util._
-import aegis.{AXIBundle, FixedFuncUnit}
+import aegis.AXIBundle
 
-class OpenGeMMWrapper(val tileSize: Int = 128) extends Module {
-  val io = IO(new Bundle {
-    val cmd = Flipped(Decoupled(new Bundle {
-      val opcode = UInt(8.W)
-      val data = UInt(512.W)
-    }))
-    val resp = Decoupled(new Bundle {
-      val data = UInt(512.W)
-    })
-    val mem = Flipped(new AXIBundle(64, 512))
-  })
-
-  val systolic = Module(new SystolicArray(tileSize))
-
-  systolic.io.cmd <> io.cmd
-  io.resp <> systolic.io.resp
-  io.mem <> systolic.io.mem
+object GemmOp {
+  val LOAD_W = 0.U(8.W)
+  val LOAD_I = 1.U(8.W)
+  val COMPUTE = 2.U(8.W)
+  val READ = 3.U(8.W)
 }
 
 class SystolicArray(val tileSize: Int) extends Module {
@@ -35,62 +23,78 @@ class SystolicArray(val tileSize: Int) extends Module {
     val mem = Flipped(new AXIBundle(64, 512))
   })
 
-  val weight_mem = SyncReadMem(tileSize * tileSize, UInt(16.W))
-  val input_mem = SyncReadMem(tileSize * tileSize, UInt(16.W))
-  val output_mem = SyncReadMem(tileSize * tileSize, UInt(32.W))
+  val n = tileSize
+  val n2 = n * n
+  val szBits = log2Ceil(n2)
 
-  val s_idle :: s_load_w :: s_load_i :: s_compute :: s_store :: Nil = Enum(5)
+  def ptr(x: UInt): UInt = x(szBits - 1, 0)
+
+  val weight = RegInit(VecInit(Seq.fill(n2)(0.U(16.W))))
+  val input = RegInit(VecInit(Seq.fill(n2)(0.U(16.W))))
+  val output = RegInit(VecInit(Seq.fill(n2)(0.U(64.W))))
+
+  val s_idle :: s_compute :: s_read :: s_done :: Nil = Enum(4)
   val state = RegInit(s_idle)
-  val addr = RegInit(0.U(log2Ceil(tileSize * tileSize).W))
-  val accum = RegInit(0.U(32.W))
-  val done = RegInit(false.B)
+
+  val p_cnt = RegInit(0.U(log2Ceil(n2).W))
+  val k_cnt = RegInit(0.U(log2Ceil(n).W))
+  val acc = RegInit(0.U(64.W))
+  val rd_data = RegInit(0.U(64.W))
+
+  io.mem := DontCare
+  io.cmd.ready := state === s_idle
+  io.resp.valid := (state === s_read) || (state === s_done)
+  io.resp.bits.data := Mux(state === s_done, (n2 * n).U, rd_data)
+
+  val index = io.cmd.bits.data(15, 0)
+  val value = io.cmd.bits.data(31, 16)
 
   switch(state) {
     is(s_idle) {
       when(io.cmd.fire) {
-        state := s_load_w
-        addr := 0.U
-      }
-    }
-    is(s_load_w) {
-      when(addr === (tileSize * tileSize - 1).U) {
-        state := s_load_i
-        addr := 0.U
-      }.otherwise {
-        addr := addr + 1.U
-      }
-    }
-    is(s_load_i) {
-      when(addr === (tileSize * tileSize - 1).U) {
-        state := s_compute
-      }.otherwise {
-        addr := addr + 1.U
+        switch(io.cmd.bits.opcode) {
+          is(GemmOp.LOAD_W) { weight(ptr(index)) := value }
+          is(GemmOp.LOAD_I) { input(ptr(index)) := value }
+          is(GemmOp.COMPUTE) {
+            p_cnt := 0.U
+            k_cnt := 0.U
+            acc := 0.U
+            state := s_compute
+          }
+          is(GemmOp.READ) {
+            rd_data := output(ptr(index))
+            state := s_read
+          }
+        }
       }
     }
     is(s_compute) {
-      for (i <- 0 until tileSize) {
-        for (j <- 0 until tileSize) {
-          val w = weight_mem.read((i * tileSize + j).U)
-          val x = input_mem.read((j * tileSize + i).U)
-          val partial = w * x
+      val i = p_cnt / n.U
+      val j = p_cnt % n.U
+      val w = weight(ptr(i * n.U + k_cnt))
+      val x = input(ptr(k_cnt * n.U + j))
+      when(k_cnt === (n - 1).U) {
+        output(p_cnt) := acc + w * x
+        when(p_cnt === (n2 - 1).U) {
+          state := s_done
+        }.otherwise {
+          p_cnt := p_cnt + 1.U
+          k_cnt := 0.U
+          acc := 0.U
         }
+      }.otherwise {
+        acc := acc + w * x
+        k_cnt := k_cnt + 1.U
       }
-      state := s_store
-    }
-    is(s_store) {
-      done := true.B
-      state := s_idle
     }
   }
 
-  io.cmd.ready := state === s_idle
-
-  io.resp.valid := done
-  io.resp.bits.data := accum
-
-  when(done) {
-    done := false.B
+  switch(state) {
+    is(s_read) {
+      when(io.resp.fire) { state := s_idle }
+    }
+    is(s_done) {
+      when(io.resp.fire) { state := s_idle }
+    }
   }
-
-  io.mem := DontCare
 }

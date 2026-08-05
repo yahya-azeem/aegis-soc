@@ -57,36 +57,39 @@ class RayFlexPipeline extends Module {
     })
   })
 
-  val s_idle :: s_bvh :: s_intersect :: s_done :: Nil = Enum(4)
-  val state = RegInit(s_idle)
-
-  val ray_origin = Reg(UInt(192.W))
-  val ray_dir = Reg(UInt(192.W))
-  val hit_dist = Reg(UInt(32.W))
-
-  switch(state) {
-    is(s_idle) {
-      when(io.cmd.fire) {
-        ray_origin := io.cmd.bits.data(191, 0)
-        ray_dir := io.cmd.bits.data(383, 192)
-        state := s_bvh
-      }
-    }
-    is(s_bvh) {
-      state := s_intersect
-    }
-    is(s_intersect) {
-      hit_dist := hit_dist + 1.U
-      state := s_done
-    }
-    is(s_done) {
-      when(io.resp.fire) {
-        state := s_idle
-      }
-    }
+  val rayBundle = new Bundle {
+    val origin = UInt(192.W)
+    val dir = UInt(192.W)
   }
 
-  io.cmd.ready := state === s_idle
-  io.resp.valid := state === s_done
-  io.resp.bits.data := hit_dist
+  val inSkid = Module(new Queue(chiselTypeOf(io.cmd.bits.data), 1))
+  val bvhStage = Module(new Queue(new Bundle {
+    val origin = UInt(192.W)
+    val dir = UInt(192.W)
+  }, 1))
+  val outSkid = Module(new Queue(UInt(512.W), 1))
+
+  inSkid.io.enq.bits := io.cmd.bits.data
+  inSkid.io.enq.valid := io.cmd.valid
+  io.cmd.ready := inSkid.io.enq.ready
+
+  bvhStage.io.enq.bits.origin := inSkid.io.deq.bits(191, 0)
+  bvhStage.io.enq.bits.dir := inSkid.io.deq.bits(383, 192)
+  bvhStage.io.enq.valid := inSkid.io.deq.valid
+  inSkid.io.deq.ready := bvhStage.io.enq.ready
+
+  val origin = bvhStage.io.deq.bits.origin
+  val dir = bvhStage.io.deq.bits.dir
+
+  val t_near = origin(63, 32) ^ dir(63, 32)
+  val hit_dist = t_near + dir(31, 0)
+  val hit = dir(0)
+
+  outSkid.io.enq.valid := bvhStage.io.deq.valid
+  outSkid.io.enq.bits := Cat(hit, hit_dist)
+  bvhStage.io.deq.ready := outSkid.io.enq.ready
+
+  outSkid.io.deq.ready := io.resp.ready
+  io.resp.valid := outSkid.io.deq.valid
+  io.resp.bits.data := outSkid.io.deq.bits
 }

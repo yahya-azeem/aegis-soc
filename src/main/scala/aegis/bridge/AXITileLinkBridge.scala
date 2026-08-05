@@ -13,64 +13,78 @@ class AXITileLinkBridge(
     val tl = new TileLinkBundle(tlBeatBytes)
   })
 
-  val s_idle :: s_read :: s_write :: s_resp :: Nil = Enum(4)
+  val s_idle :: s_wait_w :: s_send_a :: s_wait_d :: s_bresp :: s_rresp :: Nil = Enum(6)
   val state = RegInit(s_idle)
 
-  io.axi := DontCare
-  io.tl := DontCare
-
   val addr_reg = Reg(UInt(64.W))
-  val data_reg = Reg(UInt(axiDataWidth.W))
+  val rdata_reg = Reg(UInt(axiDataWidth.W))
   val is_write = Reg(Bool())
+
+  io.axi.AWREADY := false.B
+  io.axi.WREADY := false.B
+  io.axi.ARREADY := false.B
+  io.axi.BVALID := false.B
+  io.axi.BRESP := 0.U
+  io.axi.BID := 0.U
+  io.axi.RVALID := false.B
+  io.axi.RDATA := 0.U
+  io.axi.RRESP := 0.U
+  io.axi.RLAST := false.B
+  io.axi.RID := 0.U
+
+  io.tl.a_valid := false.B
+  io.tl.a_bits := 0.U
+  io.tl.d_ready := false.B
 
   switch(state) {
     is(s_idle) {
       when(io.axi.AWVALID) {
         addr_reg := io.axi.AWADDR
         is_write := true.B
-        state := s_write
         io.axi.AWREADY := true.B
+        state := s_wait_w
       }.elsewhen(io.axi.ARVALID) {
         addr_reg := io.axi.ARADDR
         is_write := false.B
-        state := s_read
         io.axi.ARREADY := true.B
+        state := s_send_a
       }
     }
-    is(s_write) {
+    is(s_wait_w) {
+      io.axi.WREADY := true.B
       when(io.axi.WVALID) {
-        data_reg := io.axi.WDATA
-        io.axi.WREADY := true.B
-        state := s_resp
+        state := s_send_a
       }
     }
-    is(s_read) {
+    is(s_send_a) {
       io.tl.a_valid := true.B
       io.tl.a_bits := addr_reg
       when(io.tl.a_ready) {
-        state := s_resp
+        state := Mux(is_write, s_bresp, s_wait_d)
       }
     }
-    is(s_resp) {
-      when(is_write) {
-        io.axi.BVALID := true.B
-        io.axi.BRESP := 0.U
-        when(io.axi.BREADY) {
-          state := s_idle
-        }
-      }.otherwise {
-        io.axi.RVALID := true.B
-        io.axi.RDATA := data_reg
-        io.axi.RRESP := 0.U
-        io.axi.RLAST := true.B
-        when(io.axi.RREADY) {
-          state := s_idle
-        }
+    is(s_wait_d) {
+      io.tl.d_ready := true.B
+      when(io.tl.d_valid) {
+        rdata_reg := io.tl.d_bits
+        state := s_rresp
+      }
+    }
+    is(s_bresp) {
+      io.axi.BVALID := true.B
+      io.axi.BRESP := 0.U
+      when(io.axi.BREADY) {
+        state := s_idle
+      }
+    }
+    is(s_rresp) {
+      io.axi.RVALID := true.B
+      io.axi.RDATA := rdata_reg
+      io.axi.RRESP := 0.U
+      io.axi.RLAST := true.B
+      when(io.axi.RREADY) {
+        state := s_idle
       }
     }
   }
-
-  io.tl.a_valid := false.B
-  io.tl.a_bits := 0.U
-  io.tl.d_ready := false.B
 }

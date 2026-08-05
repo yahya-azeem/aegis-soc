@@ -60,9 +60,50 @@ class L3VCache(val sizeKB: Int) extends Module {
   val io = IO(new Bundle {
     val crossbar = Flipped(new CrossbarInterface)
     val mem = Flipped(new AXIBundle(64, 512))
+    val hit = Output(Bool())
   })
-  io.crossbar := DontCare
+
+  val nSets = 4
+  val setBits = 2
+  val nWays = 2
+
+  val tag_mem = RegInit(VecInit(Seq.fill(nSets)(VecInit(Seq.fill(nWays)(0.U(62.W))))))
+  val valid = RegInit(VecInit(Seq.fill(nSets)(VecInit(Seq.fill(nWays)(false.B)))))
+  val data = RegInit(VecInit(Seq.fill(nSets)(VecInit(Seq.fill(nWays)(0.U(512.W))))))
+  val lru = RegInit(VecInit(Seq.fill(nSets)(0.U(1.W))))
+
+  val req = io.crossbar
+  val idx = req.addr(setBits - 1, 0)
+  val in_tag = req.addr(63, setBits)
+
+  val hitWay0 = valid(idx)(0) && (tag_mem(idx)(0) === in_tag)
+  val hitWay1 = valid(idx)(1) && (tag_mem(idx)(1) === in_tag)
+  val hit = hitWay0 || hitWay1
+
+  io.crossbar.ready := true.B
   io.mem := DontCare
+  io.hit := hit
+
+  when(req.valid) {
+    when(hitWay0) {
+      lru(idx) := 1.U
+    }.elsewhen(hitWay1) {
+      lru(idx) := 0.U
+    }.otherwise {
+      val wgt = lru(idx)
+      when(wgt === 0.U) {
+        tag_mem(idx)(0) := in_tag
+        data(idx)(0) := req.data
+        valid(idx)(0) := true.B
+        lru(idx) := 1.U
+      }.otherwise {
+        tag_mem(idx)(1) := in_tag
+        data(idx)(1) := req.data
+        valid(idx)(1) := true.B
+        lru(idx) := 0.U
+      }
+    }
+  }
 }
 
 class CoreCrossbar(val nCores: Int) extends Module {
@@ -70,6 +111,25 @@ class CoreCrossbar(val nCores: Int) extends Module {
     val core = Vec(nCores, Flipped(new CrossbarInterface))
     val l3 = new CrossbarInterface
   })
-  io.core := DontCare
-  io.l3 := DontCare
+
+  val last = RegInit(0.U(log2Ceil(nCores).W))
+  val v = (0 until nCores).map(i => io.core(i).valid)
+  val lower = (0 until nCores).map(i => (i.U > last) && v(i))
+  val upper = (0 until nCores).map(i => (i.U <= last) && v(i))
+  val any = lower.reduce(_ || _) || upper.reduce(_ || _)
+  val sel = Mux(lower.reduce(_ || _), PriorityEncoder(lower), PriorityEncoder(upper))
+  val onehot = (0 until nCores).map(i => i.U === sel)
+
+  io.l3.valid := any
+  io.l3.addr := Mux1H(onehot, (0 until nCores).map(i => io.core(i).addr))
+  io.l3.data := Mux1H(onehot, (0 until nCores).map(i => io.core(i).data))
+  io.l3.source := Mux1H(onehot, (0 until nCores).map(i => io.core(i).source))
+
+  for (i <- 0 until nCores) {
+    io.core(i).ready := (i.U === sel) && io.l3.ready && any
+  }
+
+  when(any && io.l3.ready) {
+    last := sel
+  }
 }

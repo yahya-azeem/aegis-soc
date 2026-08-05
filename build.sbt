@@ -14,5 +14,6 @@ lazy val aegis = (project in file("."))
     ),
     Compile / mainClass := Some("aegis.elaborate.TopElaborate"),
     libraryDependencies += "org.chipsalliance" %% "chisel" % chiselVersion,
+    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % Test,
     addCompilerPlugin("org.chipsalliance" % "chisel-plugin" % chiselVersion cross CrossVersion.full),
   )
