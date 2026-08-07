@@ -58,7 +58,7 @@ class AXITileLinkBridge(
     }
     is(s_send_a) {
       io.tl.a_valid := true.B
-      io.tl.a_bits := addr_reg
+      io.tl.a_bits := Cat(is_write, addr_reg(62, 0))
       when(io.tl.a_ready) {
         state := Mux(is_write, s_bresp, s_wait_d)
       }

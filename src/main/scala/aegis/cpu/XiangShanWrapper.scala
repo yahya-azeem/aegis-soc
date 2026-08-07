@@ -42,9 +42,21 @@ class XiangShanCore extends Module {
     val ipi = Output(Bool())
     val msi = Output(Bool())
   })
-  io.l2 := DontCare
-  io.ipi := false.B
-  io.msi := false.B
+
+  val reqCount = RegInit(0.U(8.W))
+  val done     = RegInit(false.B)
+
+  io.l2.valid := !done
+  io.l2.addr  := reqCount * 16.U
+  io.l2.data  := (reqCount * 2.U).asUInt
+
+  when(io.l2.valid && io.l2.ready) {
+    reqCount := reqCount + 1.U
+    when(reqCount === 7.U) { done := true.B }
+  }
+
+  io.ipi := done && (reqCount % 2.U === 1.U)
+  io.msi := done && (reqCount % 2.U === 0.U)
 }
 
 class L2CacheBank(val sourceId: Int = 0) extends Module {

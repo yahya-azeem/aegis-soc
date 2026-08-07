@@ -27,7 +27,7 @@ class HBM3Controller extends Module {
   val rd_data = Reg(UInt(512.W))
 
   io.resp.valid := false.B
-  io.resp.bits := rd_data
+  io.resp.bits := Mux(state === s_r, io.mem_axi.RDATA, rd_data)
   io.req.ready := false.B
 
   io.mem_axi.AWID := 0.U
@@ -76,9 +76,9 @@ class HBM3Controller extends Module {
       when(io.mem_axi.ARREADY) { state := s_r }
     }
     is(s_r) {
-      io.resp.valid := true.B
+      io.resp.valid := io.mem_axi.RVALID
       when(io.mem_axi.RVALID) { rd_data := io.mem_axi.RDATA }
-      when(io.resp.ready) { state := s_idle }
+      when(io.mem_axi.RVALID && io.resp.ready) { state := s_idle }
     }
   }
 }

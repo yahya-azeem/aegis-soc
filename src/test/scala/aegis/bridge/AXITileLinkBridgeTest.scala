@@ -41,7 +41,7 @@ class AXITileLinkBridgeTest extends AnyFlatSpec with ChiselSim {
       dut.io.axi.WVALID.poke(false.B)
 
       dut.io.tl.a_valid.expect(true.B)
-      dut.io.tl.a_bits.expect(0x1234.U)
+      dut.io.tl.a_bits.expect(BigInt("8000000000001234", 16).U)
       dut.io.tl.a_ready.poke(true.B)
       dut.clock.step()
     }

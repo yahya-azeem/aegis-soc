@@ -87,15 +87,15 @@ class CrossbarMatrix extends Module {
   }
 
   io.mem_cpu_req.valid := cpu_pending
-  io.mem_cpu_req.bits.addr := cpu_addr
+  io.mem_cpu_req.bits.addr := cpu_addr(62, 0)
   io.mem_cpu_req.bits.data := 0.U
-  io.mem_cpu_req.bits.isWrite := false.B
+  io.mem_cpu_req.bits.isWrite := cpu_addr(63)
   io.mem_cpu_req.bits.size := 0.U
 
   io.mem_gpu_req.valid := gpu_pending
-  io.mem_gpu_req.bits.addr := gpu_addr
+  io.mem_gpu_req.bits.addr := gpu_addr(62, 0)
   io.mem_gpu_req.bits.data := 0.U
-  io.mem_gpu_req.bits.isWrite := false.B
+  io.mem_gpu_req.bits.isWrite := gpu_addr(63)
   io.mem_gpu_req.bits.size := 0.U
 
   io.cpu_d_valid := io.mem_cpu_resp.valid

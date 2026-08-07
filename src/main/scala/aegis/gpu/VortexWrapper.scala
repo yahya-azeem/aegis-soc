@@ -37,9 +37,32 @@ class VortexCluster extends Module {
     val vector = new VectorPipeline
   })
 
-  cores := DontCare
-  io.mem := DontCare
-  io.irq := false.B
+  val active  = RegInit(true.B)
+  val pc      = RegInit(0.U(64.W))
+  val count   = RegInit(0.U(8.W))
+
+  cores.scalar.pc     := pc
+  cores.scalar.instr  := 0x00000013.U(32.W)
+  cores.scalar.valid  := active
+  cores.vector.vaddr  := pc
+  cores.vector.vdata  := (count * 4.U).asUInt
+  cores.vector.valid  := active
+
+  io.mem.req.valid := active
+  io.mem.req.bits.addr  := pc
+  io.mem.req.bits.data  := (count * 4.U).asUInt
+  io.mem.req.bits.isWrite := false.B
+  io.mem.req.bits.size := 4.U
+
+  when(io.mem.req.fire) {
+    pc := pc + 8.U
+    count := count + 1.U
+    when(count === 7.U) { active := false.B }
+  }
+
+  io.mem.resp.ready := false.B
+
+  io.irq := !active
 }
 
 class ScalarPipeline extends Bundle {
