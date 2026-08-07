@@ -20,8 +20,35 @@ class VortexWrapper(implicit config: AegisConfig) extends Module {
     clusters(i).io.mem <> l2_cache.io.cluster(i)
   }
 
-  io.axi := DontCare
-  l2_cache.io.mem := DontCare
+  io.axi.AWID := l2_cache.io.mem.AWID
+  io.axi.AWADDR := l2_cache.io.mem.AWADDR
+  io.axi.AWLEN := l2_cache.io.mem.AWLEN
+  io.axi.AWSIZE := l2_cache.io.mem.AWSIZE
+  io.axi.AWBURST := l2_cache.io.mem.AWBURST
+  io.axi.AWVALID := l2_cache.io.mem.AWVALID
+  io.axi.WDATA := l2_cache.io.mem.WDATA
+  io.axi.WSTRB := l2_cache.io.mem.WSTRB
+  io.axi.WLAST := l2_cache.io.mem.WLAST
+  io.axi.WVALID := l2_cache.io.mem.WVALID
+  io.axi.BREADY := l2_cache.io.mem.BREADY
+  io.axi.ARID := l2_cache.io.mem.ARID
+  io.axi.ARADDR := l2_cache.io.mem.ARADDR
+  io.axi.ARLEN := l2_cache.io.mem.ARLEN
+  io.axi.ARSIZE := l2_cache.io.mem.ARSIZE
+  io.axi.ARBURST := l2_cache.io.mem.ARBURST
+  io.axi.ARVALID := l2_cache.io.mem.ARVALID
+  io.axi.RREADY := l2_cache.io.mem.RREADY
+  l2_cache.io.mem.AWREADY := io.axi.AWREADY
+  l2_cache.io.mem.WREADY := io.axi.WREADY
+  l2_cache.io.mem.BVALID := io.axi.BVALID
+  l2_cache.io.mem.BRESP := io.axi.BRESP
+  l2_cache.io.mem.BID := io.axi.BID
+  l2_cache.io.mem.ARREADY := io.axi.ARREADY
+  l2_cache.io.mem.RVALID := io.axi.RVALID
+  l2_cache.io.mem.RDATA := io.axi.RDATA
+  l2_cache.io.mem.RRESP := io.axi.RRESP
+  l2_cache.io.mem.RLAST := io.axi.RLAST
+  l2_cache.io.mem.RID := io.axi.RID
 
   io.soc.irq := clusters.map(_.io.irq).reduce(_ || _)
 }
@@ -80,7 +107,7 @@ class VectorPipeline extends Bundle {
 class GPUL2Cache(val nClusters: Int = 8, val latency: Int = 2) extends Module {
   val io = IO(new Bundle {
     val cluster = Vec(nClusters, Flipped(new MemInterface))
-    val mem = Flipped(new AXIBundle(64, 512))
+    val mem = new AXIBundle(64, 512)
   })
 
   val last = RegInit(0.U(log2Ceil(nClusters).W))
@@ -88,6 +115,8 @@ class GPUL2Cache(val nClusters: Int = 8, val latency: Int = 2) extends Module {
   val serving = RegInit(0.U(log2Ceil(nClusters).W))
   val L = RegInit(0.U(log2Ceil(latency).W))
   val echo = Reg(UInt(512.W))
+  val ar_pending = RegInit(false.B)
+  val ar_addr = RegInit(0.U(64.W))
 
   val v = (0 until nClusters).map(i => io.cluster(i).req.valid)
   val lower = (0 until nClusters).map(i => (i.U > last) && v(i))
@@ -97,7 +126,24 @@ class GPUL2Cache(val nClusters: Int = 8, val latency: Int = 2) extends Module {
   val sel = Mux(lower.reduce(_ || _), PriorityEncoder(lower), PriorityEncoder(upper))
   val onehot = (0 until nClusters).map(i => i.U === sel)
 
-  io.mem := DontCare
+  io.mem.AWID := 0.U
+  io.mem.AWADDR := 0.U
+  io.mem.AWLEN := 0.U
+  io.mem.AWSIZE := 6.U
+  io.mem.AWBURST := 0.U
+  io.mem.AWVALID := false.B
+  io.mem.WDATA := 0.U
+  io.mem.WSTRB := 0.U
+  io.mem.WLAST := false.B
+  io.mem.WVALID := false.B
+  io.mem.BREADY := false.B
+  io.mem.ARID := 0.U
+  io.mem.ARADDR := ar_addr
+  io.mem.ARLEN := 0.U
+  io.mem.ARSIZE := 6.U
+  io.mem.ARBURST := 0.U
+  io.mem.ARVALID := ar_pending
+  io.mem.RREADY := false.B
 
   for (i <- 0 until nClusters) {
     io.cluster(i).req.ready := !in_flight && any && (i.U === sel)
@@ -111,7 +157,11 @@ class GPUL2Cache(val nClusters: Int = 8, val latency: Int = 2) extends Module {
     last := sel
     L := (latency - 1).U
     echo := Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.data))
+    ar_pending := true.B
+    ar_addr := Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.addr))
   }
+
+  when(ar_pending && io.mem.ARREADY) { ar_pending := false.B }
 
   when(in_flight) {
     when(L === 0.U) {
