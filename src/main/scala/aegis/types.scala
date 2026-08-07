@@ -56,6 +56,19 @@ class MemReq extends Bundle {
   val size = UInt(3.W)
 }
 
+/** 32-bit word-level memory request used by the CPU core's data port. */
+class WordMemReq extends Bundle {
+  val addr = UInt(64.W)
+  val data = UInt(32.W)
+  val isWrite = Bool()
+  val size = UInt(2.W) // 0 = word, 1 = half, 2 = byte
+}
+
+class WordMemPort extends Bundle {
+  val req = Decoupled(new WordMemReq)
+  val resp = Flipped(Decoupled(UInt(32.W)))
+}
+
 class MemInterface extends Bundle {
   val req = Decoupled(new MemReq)
   val resp = Flipped(Decoupled(UInt(512.W)))

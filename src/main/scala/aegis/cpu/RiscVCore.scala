@@ -2,6 +2,7 @@ package aegis.cpu
 
 import chisel3._
 import chisel3.util._
+import aegis._
 
 /**
  * A real, self-contained in-order RV32I core.
@@ -12,7 +13,7 @@ import chisel3.util._
  * Single-issue and in-order, no speculation -- correctness over speed. This
  * is the Phase-2 CPU prototype.
  */
-class RiscVICore(nWords: Int = 256, nDWords: Int = 256) extends Module {
+class RiscVICore(nWords: Int = 256, nDWords: Int = 256, useExtMem: Boolean = false) extends Module {
   val IW = 32
   val io = IO(new Bundle {
     val prog_we   = Input(Bool())
@@ -24,6 +25,7 @@ class RiscVICore(nWords: Int = 256, nDWords: Int = 256) extends Module {
     val regs      = Output(Vec(32, UInt(IW.W)))
     val dmem      = Output(Vec(nDWords, UInt(IW.W)))
     val inst_out  = Output(UInt(IW.W))
+    val mem       = new WordMemPort
   })
 
   val imem = RegInit(VecInit(Seq.fill(nWords)(0.U(IW.W))))
@@ -37,13 +39,18 @@ class RiscVICore(nWords: Int = 256, nDWords: Int = 256) extends Module {
 
   when(io.prog_we) { imem(io.prog_addr) := io.prog_data }
 
-  // ---- load-wait state ----
+  // ---- load-wait state (internal dmem) ----
   val loadWait = RegInit(false.B)
   val ldAddr   = RegInit(0.U(IW.W))
   val ldRd     = RegInit(0.U(5.W))
   val ldByte   = RegInit(false.B)
   val ldHalf   = RegInit(false.B)
   val ldSigned = RegInit(false.B)
+
+  // ---- external-memory wait state ----
+  val memWait  = RegInit(false.B)
+  val memRd    = RegInit(0.U(5.W))
+  val memWr    = RegInit(false.B)
 
   val inst = imem((pc >> 2)(log2Ceil(nWords) - 1, 0))
   val opcode = inst(6, 0)
@@ -130,26 +137,71 @@ class RiscVICore(nWords: Int = 256, nDWords: Int = 256) extends Module {
   val loadRes = Mux(ldByte, sigByte | loByte,
                 Mux(ldHalf, sigHalf | loHalf, loShift))
 
+  // ---- external memory request interface ----
+  val extMem = if (useExtMem) true.B else false.B
+  val memOp = (isLoad || isStore) && extMem
+  io.mem.req.valid := running && !halted && !loadWait && !memWait && memOp
+  io.mem.req.bits.addr := addr
+  io.mem.req.bits.data := rs2v
+  io.mem.req.bits.isWrite := isStore
+  io.mem.req.bits.size := Mux((f3 === 0.U) || (f3 === 4.U), 2.U,
+                          Mux((f3 === 1.U) || (f3 === 5.U), 1.U, 0.U))
+  io.mem.resp.ready := memWait
+
+  // sign-extension for external load results
+  val mres = Mux(ldByte,
+    Mux(ldSigned && io.mem.resp.bits(7), "hffffff00".U(IW.W) | io.mem.resp.bits(7, 0),
+      io.mem.resp.bits(7, 0)),
+    Mux(ldHalf,
+      Mux(ldSigned && io.mem.resp.bits(15), "hffff0000".U(IW.W) | io.mem.resp.bits(15, 0),
+        io.mem.resp.bits(15, 0)),
+      io.mem.resp.bits))
+
   // ---- execution ----
   when(running && !halted) {
+    // request handshake for the external path advances the PC here
+    when(!loadWait && !memWait && (isLoad || isStore) && extMem && io.mem.req.fire) {
+      ldAddr := addr
+      ldRd   := rd
+      ldByte := (f3 === 0.U) || (f3 === 4.U)
+      ldHalf := (f3 === 1.U) || (f3 === 5.U)
+      ldSigned := (f3 === 0.U) || (f3 === 1.U) || (f3 === 2.U)
+      memWr  := isStore
+      memRd  := rd
+      memWait := true.B
+      pc := nextPc
+    }
     when(loadWait) {
       when(ldRd =/= 0.U) { rf(ldRd) := loadRes }
       loadWait := false.B
+    }.elsewhen(memWait) {
+      when(io.mem.resp.fire) {
+        when(!memWr && memRd =/= 0.U) { rf(memRd) := mres }
+        memWait := false.B
+      }
     }.elsewhen(isHalt) {
       halted := true.B
     }.otherwise {
       when(wbEn) { rf(rd) := wbVal }
-      when(isLoad) {
-        ldAddr := addr
-        ldRd   := rd
-        ldByte := (f3 === 0.U) || (f3 === 4.U)
-        ldHalf := (f3 === 1.U) || (f3 === 5.U)
-        ldSigned := (f3 === 0.U) || (f3 === 1.U) || (f3 === 2.U)
-        loadWait := true.B
-      }.elsewhen(isStore) {
-        dmem(addr(log2Ceil(nDWords) + 1, 2)) := rs2v
+      when(isLoad || isStore) {
+        when(extMem) {
+          // request already issued via io.mem; nothing to do this cycle
+        }.otherwise {
+          when(isLoad) {
+            ldAddr := addr
+            ldRd   := rd
+            ldByte := (f3 === 0.U) || (f3 === 4.U)
+            ldHalf := (f3 === 1.U) || (f3 === 5.U)
+            ldSigned := (f3 === 0.U) || (f3 === 1.U) || (f3 === 2.U)
+            loadWait := true.B
+          }.elsewhen(isStore) {
+            dmem(addr(log2Ceil(nDWords) + 1, 2)) := rs2v
+          }
+          pc := nextPc
+        }
+      }.otherwise {
+        pc := nextPc
       }
-      pc := nextPc
     }
   }
 
