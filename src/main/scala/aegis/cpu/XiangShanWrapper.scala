@@ -15,7 +15,7 @@ class XiangShanWrapper(implicit config: AegisConfig) extends Module {
   val cores = Seq.fill(cfg.nCores) { Module(new XiangShanCore) }
 
   val l2_banks = cores.indices.map { i =>
-    val bank = Module(new L2CacheBank)
+    val bank = Module(new L2CacheBank(i))
     bank.io.core <> cores(i).io.l2
     bank
   }
@@ -47,13 +47,31 @@ class XiangShanCore extends Module {
   io.msi := false.B
 }
 
-class L2CacheBank extends Module {
+class L2CacheBank(val sourceId: Int = 0) extends Module {
   val io = IO(new Bundle {
     val core = Flipped(new L2Interface)
     val crossbar = new CrossbarInterface
   })
-  io.core := DontCare
-  io.crossbar := DontCare
+
+  val busy = RegInit(false.B)
+  val addr_r = Reg(UInt(64.W))
+  val data_r = Reg(UInt(512.W))
+
+  io.core.ready := !busy
+  when(io.core.valid && io.core.ready) {
+    busy := true.B
+    addr_r := io.core.addr
+    data_r := io.core.data
+  }
+
+  io.crossbar.valid := busy
+  io.crossbar.addr := addr_r
+  io.crossbar.data := data_r
+  io.crossbar.source := sourceId.U(4.W)
+
+  when(busy && io.crossbar.ready) {
+    busy := false.B
+  }
 }
 
 class L3VCache(val sizeKB: Int) extends Module {
