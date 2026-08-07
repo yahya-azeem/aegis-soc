@@ -10,40 +10,31 @@ class SplitPrioritizerTest extends AnyFlatSpec with ChiselSim {
 
   private def sim = new SplitPrioritizer()(AegisConfig())
 
+  private def issueReq(dut: SplitPrioritizer, addr: Long, isW: Boolean, data: Long): Unit = {
+    dut.io.soc.cpu_req.valid.poke(true.B)
+    dut.io.soc.cpu_req.bits.addr.poke(addr.U)
+    dut.io.soc.cpu_req.bits.data.poke(data.U(512.W))
+    dut.io.soc.cpu_req.bits.isWrite.poke(isW.B)
+    while (!(dut.io.soc.cpu_req.valid.peek().litToBoolean && dut.io.soc.cpu_req.ready.peek().litToBoolean)) {
+      dut.clock.step()
+    }
+    dut.clock.step() // fire
+    dut.io.soc.cpu_req.valid.poke(false.B)
+  }
+
   it should "route a CPU write to the CPU response port and leave GPU idle" in {
     simulate(sim) { dut =>
       dut.io.mode.poke(SplitMode.gaming.U)
       dut.io.soc.gpu_req.valid.poke(false.B)
       dut.io.soc.cpu_resp.ready.poke(true.B)
       dut.io.soc.gpu_resp.ready.poke(true.B)
-      dut.io.mem_axi.AWREADY.poke(true.B)
-      dut.io.mem_axi.WREADY.poke(true.B)
-      dut.io.mem_axi.BVALID.poke(false.B)
-      dut.io.mem_axi.ARREADY.poke(true.B)
-      dut.io.mem_axi.RVALID.poke(false.B)
 
-      dut.io.soc.cpu_req.valid.poke(true.B)
-      dut.io.soc.cpu_req.bits.addr.poke("h1000".U)
-      dut.io.soc.cpu_req.bits.data.poke("hABCD".U(512.W))
-      dut.io.soc.cpu_req.bits.isWrite.poke(true.B)
-      dut.clock.step()
-      dut.io.soc.cpu_req.valid.poke(false.B)
+      issueReq(dut, 0x1000, isW = true, 0xABCD)
 
-      dut.io.mem_axi.AWVALID.expect(true.B)
-      dut.io.mem_axi.AWADDR.expect("h1000".U)
-      dut.io.pg_active.expect(false.B)
-      dut.clock.step()
-
-      dut.io.mem_axi.WVALID.expect(true.B)
-      dut.io.mem_axi.WDATA.expect("hABCD".U(512.W))
-      dut.clock.step()
-
-      dut.io.mem_axi.BVALID.poke(true.B)
-      dut.io.soc.cpu_resp.valid.expect(true.B)
+      var guard = 0
+      while (!dut.io.soc.cpu_resp.valid.peek().litToBoolean && guard < 40) { dut.clock.step(); guard += 1 }
+      assert(dut.io.soc.cpu_resp.valid.peek().litToBoolean, "CPU write response never returned")
       dut.io.soc.gpu_resp.valid.expect(false.B)
-      dut.clock.step()
-      dut.io.mem_axi.BVALID.poke(false.B)
-      dut.io.soc.cpu_resp.valid.expect(false.B)
     }
   }
 
@@ -53,31 +44,18 @@ class SplitPrioritizerTest extends AnyFlatSpec with ChiselSim {
       dut.io.soc.gpu_req.valid.poke(false.B)
       dut.io.soc.cpu_resp.ready.poke(true.B)
       dut.io.soc.gpu_resp.ready.poke(true.B)
-      dut.io.mem_axi.AWREADY.poke(true.B)
-      dut.io.mem_axi.WREADY.poke(true.B)
-      dut.io.mem_axi.BVALID.poke(false.B)
-      dut.io.mem_axi.ARREADY.poke(true.B)
-      dut.io.mem_axi.RVALID.poke(false.B)
 
-      dut.io.soc.cpu_req.valid.poke(true.B)
-      dut.io.soc.cpu_req.bits.addr.poke("h2000".U)
-      dut.io.soc.cpu_req.bits.isWrite.poke(false.B)
-      dut.clock.step()
-      dut.io.soc.cpu_req.valid.poke(false.B)
+      // write 0xBEEF then read it back from the internal HBM3 stack
+      issueReq(dut, 0x2000, isW = true, 0xBEEF)
+      var wg = 0
+      while (!dut.io.soc.cpu_resp.valid.peek().litToBoolean && wg < 20) { dut.clock.step(); wg += 1 }
+      assert(dut.io.soc.cpu_resp.valid.peek().litToBoolean, "write never completed")
 
-      dut.io.mem_axi.ARVALID.expect(true.B)
-      dut.io.mem_axi.ARADDR.expect("h2000".U)
-      dut.io.pg_active.expect(true.B)
-      dut.clock.step()
-
-      dut.io.mem_axi.RVALID.poke(true.B)
-      dut.io.mem_axi.RDATA.poke("hBEEF".U(512.W))
-      dut.io.soc.cpu_resp.valid.expect(true.B)
-      dut.clock.step()
-      dut.io.mem_axi.RVALID.poke(false.B)
-
-      dut.io.soc.cpu_resp.bits.data.expect("hBEEF".U(512.W))
-      dut.io.soc.cpu_resp.valid.expect(false.B)
+      issueReq(dut, 0x2000, isW = false, 0x0)
+      var rg = 0
+      while (!dut.io.soc.cpu_resp.valid.peek().litToBoolean && rg < 20) { dut.clock.step(); rg += 1 }
+      assert(dut.io.soc.cpu_resp.valid.peek().litToBoolean, "read never completed")
+      dut.io.soc.cpu_resp.bits.expect("hBEEF".U(512.W))
     }
   }
 
@@ -86,11 +64,6 @@ class SplitPrioritizerTest extends AnyFlatSpec with ChiselSim {
       dut.io.mode.poke(SplitMode.gaming.U)
       dut.io.soc.cpu_resp.ready.poke(true.B)
       dut.io.soc.gpu_resp.ready.poke(true.B)
-      dut.io.mem_axi.AWREADY.poke(true.B)
-      dut.io.mem_axi.WREADY.poke(true.B)
-      dut.io.mem_axi.BVALID.poke(false.B)
-      dut.io.mem_axi.ARREADY.poke(true.B)
-      dut.io.mem_axi.RVALID.poke(false.B)
 
       dut.io.soc.cpu_req.valid.poke(true.B)
       dut.io.soc.cpu_req.bits.addr.poke("h3000".U)
@@ -103,9 +76,6 @@ class SplitPrioritizerTest extends AnyFlatSpec with ChiselSim {
       dut.io.soc.cpu_req.ready.expect(true.B)
       dut.io.soc.gpu_req.ready.expect(false.B)
       dut.clock.step()
-
-      dut.io.mem_axi.AWVALID.expect(true.B)
-      dut.io.mem_axi.AWADDR.expect("h3000".U)
     }
   }
 }

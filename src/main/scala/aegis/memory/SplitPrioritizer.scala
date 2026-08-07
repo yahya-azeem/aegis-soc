@@ -10,79 +10,6 @@ object SplitMode {
   val ai = 2
 }
 
-class HBM3Controller extends Module {
-  val io = IO(new Bundle {
-    val req = Flipped(Decoupled(new MemReq))
-    val resp = Decoupled(UInt(512.W))
-    val open_page = Input(Bool())
-    val pg_active = Output(Bool())
-    val mem_axi = new AXIBundle(64, 512)
-  })
-
-  val s_idle :: s_aw :: s_w :: s_b :: s_ar :: s_r :: Nil = Enum(6)
-  val state = RegInit(s_idle)
-
-  val addr_r = Reg(UInt(64.W))
-  val data_r = Reg(UInt(512.W))
-  val rd_data = Reg(UInt(512.W))
-
-  io.resp.valid := false.B
-  io.resp.bits := Mux(state === s_r, io.mem_axi.RDATA, rd_data)
-  io.req.ready := false.B
-
-  io.mem_axi.AWID := 0.U
-  io.mem_axi.AWVALID := state === s_aw
-  io.mem_axi.AWADDR := addr_r
-  io.mem_axi.AWLEN := 0.U
-  io.mem_axi.AWSIZE := 6.U
-  io.mem_axi.AWBURST := 0.U
-  io.mem_axi.WVALID := state === s_w
-  io.mem_axi.WDATA := data_r
-  io.mem_axi.WLAST := state === s_w
-  io.mem_axi.WSTRB := ~0.U(64.W)
-  io.mem_axi.BREADY := state === s_b
-  io.mem_axi.ARID := 0.U
-  io.mem_axi.ARVALID := state === s_ar
-  io.mem_axi.ARADDR := addr_r
-  io.mem_axi.ARLEN := 0.U
-  io.mem_axi.ARSIZE := 6.U
-  io.mem_axi.ARBURST := 0.U
-  io.mem_axi.RREADY := state === s_r
-
-  io.pg_active := io.open_page && (state =/= s_idle)
-
-  switch(state) {
-    is(s_idle) {
-      io.req.ready := true.B
-      when(io.req.fire) {
-        addr_r := io.req.bits.addr
-        data_r := io.req.bits.data
-        state := Mux(io.req.bits.isWrite, s_aw, s_ar)
-      }
-    }
-    is(s_aw) {
-      when(io.mem_axi.AWREADY) { state := s_w }
-    }
-    is(s_w) {
-      when(io.mem_axi.WREADY) { state := s_b }
-    }
-    is(s_b) {
-      when(io.mem_axi.BVALID) {
-        io.resp.valid := true.B
-        when(io.resp.ready) { state := s_idle }
-      }
-    }
-    is(s_ar) {
-      when(io.mem_axi.ARREADY) { state := s_r }
-    }
-    is(s_r) {
-      io.resp.valid := io.mem_axi.RVALID
-      when(io.mem_axi.RVALID) { rd_data := io.mem_axi.RDATA }
-      when(io.mem_axi.RVALID && io.resp.ready) { state := s_idle }
-    }
-  }
-}
-
 class SplitPrioritizer(implicit config: AegisConfig) extends Module {
   val io = IO(new Bundle {
     val soc = new MemPort
@@ -91,8 +18,8 @@ class SplitPrioritizer(implicit config: AegisConfig) extends Module {
     val pg_active = Output(Bool())
   })
 
-  val hbm = Module(new HBM3Controller)
-  io.mem_axi <> hbm.io.mem_axi
+  val hbm = Module(new HBM3Stack)
+  io.mem_axi <> hbm.io.mem
   io.pg_active := hbm.io.pg_active
 
   val cpu_priority = io.mode === SplitMode.gaming.U
