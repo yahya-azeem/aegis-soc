@@ -29,8 +29,35 @@ class XiangShanWrapper(implicit config: AegisConfig) extends Module {
   }
   crossbar.io.l3 <> l3_slice.io.crossbar
 
-  io.axi := DontCare
-  l3_slice.io.mem := DontCare
+  io.axi.AWID := l3_slice.io.mem.AWID
+  io.axi.AWADDR := l3_slice.io.mem.AWADDR
+  io.axi.AWLEN := l3_slice.io.mem.AWLEN
+  io.axi.AWSIZE := l3_slice.io.mem.AWSIZE
+  io.axi.AWBURST := l3_slice.io.mem.AWBURST
+  io.axi.AWVALID := l3_slice.io.mem.AWVALID
+  io.axi.WDATA := l3_slice.io.mem.WDATA
+  io.axi.WSTRB := l3_slice.io.mem.WSTRB
+  io.axi.WLAST := l3_slice.io.mem.WLAST
+  io.axi.WVALID := l3_slice.io.mem.WVALID
+  io.axi.BREADY := l3_slice.io.mem.BREADY
+  io.axi.ARID := l3_slice.io.mem.ARID
+  io.axi.ARADDR := l3_slice.io.mem.ARADDR
+  io.axi.ARLEN := l3_slice.io.mem.ARLEN
+  io.axi.ARSIZE := l3_slice.io.mem.ARSIZE
+  io.axi.ARBURST := l3_slice.io.mem.ARBURST
+  io.axi.ARVALID := l3_slice.io.mem.ARVALID
+  io.axi.RREADY := l3_slice.io.mem.RREADY
+  l3_slice.io.mem.AWREADY := io.axi.AWREADY
+  l3_slice.io.mem.WREADY := io.axi.WREADY
+  l3_slice.io.mem.BVALID := io.axi.BVALID
+  l3_slice.io.mem.BRESP := io.axi.BRESP
+  l3_slice.io.mem.BID := io.axi.BID
+  l3_slice.io.mem.ARREADY := io.axi.ARREADY
+  l3_slice.io.mem.RVALID := io.axi.RVALID
+  l3_slice.io.mem.RDATA := io.axi.RDATA
+  l3_slice.io.mem.RRESP := io.axi.RRESP
+  l3_slice.io.mem.RLAST := io.axi.RLAST
+  l3_slice.io.mem.RID := io.axi.RID
 
   io.soc.ipi := VecInit(cores.map(_.io.ipi)).asUInt
   io.soc.msi := VecInit(cores.map(_.io.msi)).asUInt
@@ -89,7 +116,7 @@ class L2CacheBank(val sourceId: Int = 0) extends Module {
 class L3VCache(val sizeKB: Int) extends Module {
   val io = IO(new Bundle {
     val crossbar = Flipped(new CrossbarInterface)
-    val mem = Flipped(new AXIBundle(64, 512))
+    val mem = new AXIBundle(64, 512)
     val hit = Output(Bool())
   })
 
@@ -110,8 +137,34 @@ class L3VCache(val sizeKB: Int) extends Module {
   val hitWay1 = valid(idx)(1) && (tag_mem(idx)(1) === in_tag)
   val hit = hitWay0 || hitWay1
 
+  val ar_pending = RegInit(false.B)
+  val ar_addr = RegInit(0.U(64.W))
+  when(req.valid && !ar_pending) {
+    ar_pending := true.B
+    ar_addr := req.addr
+  }
+  when(ar_pending && io.mem.ARREADY) { ar_pending := false.B }
+
+  io.mem.AWID := 0.U
+  io.mem.AWADDR := 0.U
+  io.mem.AWLEN := 0.U
+  io.mem.AWSIZE := 6.U
+  io.mem.AWBURST := 0.U
+  io.mem.AWVALID := false.B
+  io.mem.WDATA := 0.U
+  io.mem.WSTRB := 0.U
+  io.mem.WLAST := false.B
+  io.mem.WVALID := false.B
+  io.mem.BREADY := false.B
+  io.mem.ARID := 0.U
+  io.mem.ARADDR := ar_addr
+  io.mem.ARLEN := 0.U
+  io.mem.ARSIZE := 6.U
+  io.mem.ARBURST := 0.U
+  io.mem.ARVALID := ar_pending
+  io.mem.RREADY := false.B
+
   io.crossbar.ready := true.B
-  io.mem := DontCare
   io.hit := hit
 
   when(req.valid) {
