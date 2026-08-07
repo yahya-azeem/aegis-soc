@@ -137,13 +137,24 @@ class L3VCache(val sizeKB: Int) extends Module {
   val hitWay1 = valid(idx)(1) && (tag_mem(idx)(1) === in_tag)
   val hit = hitWay0 || hitWay1
 
+  val captured  = RegInit(false.B)
   val ar_pending = RegInit(false.B)
-  val ar_addr = RegInit(0.U(64.W))
-  when(req.valid && !ar_pending) {
-    ar_pending := true.B
+  val rd_await  = RegInit(false.B)
+  val ar_addr   = RegInit(0.U(64.W))
+
+  when(req.valid && !captured && !ar_pending && !rd_await) {
+    captured := true.B
     ar_addr := req.addr
   }
-  when(ar_pending && io.mem.ARREADY) { ar_pending := false.B }
+  when(captured && io.mem.ARREADY) {
+    ar_pending := true.B
+    captured := false.B
+  }
+  when(ar_pending && io.mem.RVALID) {
+    ar_pending := false.B
+    rd_await := true.B
+  }
+  when(rd_await) { rd_await := false.B }
 
   io.mem.AWID := 0.U
   io.mem.AWADDR := 0.U
@@ -161,10 +172,10 @@ class L3VCache(val sizeKB: Int) extends Module {
   io.mem.ARLEN := 0.U
   io.mem.ARSIZE := 6.U
   io.mem.ARBURST := 0.U
-  io.mem.ARVALID := ar_pending
-  io.mem.RREADY := false.B
+  io.mem.ARVALID := captured
+  io.mem.RREADY := ar_pending
 
-  io.crossbar.ready := true.B
+  io.crossbar.ready := !captured && !ar_pending && !rd_await
   io.hit := hit
 
   when(req.valid) {
