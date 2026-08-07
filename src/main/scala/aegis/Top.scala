@@ -38,7 +38,36 @@ soc.io.cpu <> cpu.io.soc
 
   mem_ctrl.io.mode := memMode.U(2.W)
   mem_mode := memMode.U(2.W)
-  mem_ctrl.io.mem_axi := DontCare
-  mem_axi := DontCare
+
+  mem_axi.AWID := mem_ctrl.io.mem_axi.AWID
+  mem_axi.AWADDR := mem_ctrl.io.mem_axi.AWADDR
+  mem_axi.AWLEN := mem_ctrl.io.mem_axi.AWLEN
+  mem_axi.AWSIZE := mem_ctrl.io.mem_axi.AWSIZE
+  mem_axi.AWBURST := mem_ctrl.io.mem_axi.AWBURST
+  mem_axi.AWVALID := mem_ctrl.io.mem_axi.AWVALID
+  mem_axi.WDATA := mem_ctrl.io.mem_axi.WDATA
+  mem_axi.WSTRB := mem_ctrl.io.mem_axi.WSTRB
+  mem_axi.WLAST := mem_ctrl.io.mem_axi.WLAST
+  mem_axi.WVALID := mem_ctrl.io.mem_axi.WVALID
+  mem_axi.BREADY := mem_ctrl.io.mem_axi.BREADY
+  mem_axi.ARID := mem_ctrl.io.mem_axi.ARID
+  mem_axi.ARADDR := mem_ctrl.io.mem_axi.ARADDR
+  mem_axi.ARLEN := mem_ctrl.io.mem_axi.ARLEN
+  mem_axi.ARSIZE := mem_ctrl.io.mem_axi.ARSIZE
+  mem_axi.ARBURST := mem_ctrl.io.mem_axi.ARBURST
+  mem_axi.ARVALID := mem_ctrl.io.mem_axi.ARVALID
+  mem_axi.RREADY := mem_ctrl.io.mem_axi.RREADY
+  mem_ctrl.io.mem_axi.AWREADY := mem_axi.AWREADY
+  mem_ctrl.io.mem_axi.WREADY := mem_axi.WREADY
+  mem_ctrl.io.mem_axi.BVALID := mem_axi.BVALID
+  mem_ctrl.io.mem_axi.BRESP := mem_axi.BRESP
+  mem_ctrl.io.mem_axi.BID := mem_axi.BID
+  mem_ctrl.io.mem_axi.ARREADY := mem_axi.ARREADY
+  mem_ctrl.io.mem_axi.RVALID := mem_axi.RVALID
+  mem_ctrl.io.mem_axi.RDATA := mem_axi.RDATA
+  mem_ctrl.io.mem_axi.RRESP := mem_axi.RRESP
+  mem_ctrl.io.mem_axi.RLAST := mem_axi.RLAST
+  mem_ctrl.io.mem_axi.RID := mem_axi.RID
+
   debug_uart := DontCare
 }
