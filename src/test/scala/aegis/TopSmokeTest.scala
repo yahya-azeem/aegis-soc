@@ -168,4 +168,70 @@ class TopSmokeTest extends AnyFlatSpec with ChiselSim {
       assert(got.toList == expected.toList, s"Top GEMM mismatch:\n got=${got.mkString(",")}\n exp=${expected.mkString(",")}")
     }
   }
+
+  it should "run the on-die SIMT GPU kernel inside the Top against the shared HBM3" in {
+    simulate(new Top(0)(defaultConfig)) { dut =>
+      dut.gpu.req.valid.poke(false.B)
+      dut.gpu.resp.ready.poke(true.B)
+      dut.gemm_start.poke(false.B)
+      dut.gemm_base.poke(0.U)
+
+      val n = 2
+      val xBase = 0x400L
+      val zBase = 0x500L
+      val yBase = 0x600L
+
+      val xVals = Seq((0 until 32).map(i => (i * 3) & 0xffff), (0 until 32).map(i => (i * 5) & 0xffff))
+      val zVals = Seq((0 until 32).map(i => (i * 7) & 0xffff), (0 until 32).map(i => (i * 11) & 0xffff))
+      val expVals = xVals.zip(zVals).map { case (x, z) => x.zip(z).map { case (a, b) => (a + b) & 0xffff } }
+
+      def operandLine(raw: Seq[Int]): BigInt =
+        raw.zipWithIndex.foldLeft(BigInt(0)) { case (acc, (v, i)) =>
+          acc | (BigInt(v & 0xffff) << (i * 16))
+        }
+
+      def issue(addr: Long, isW: Boolean, data: BigInt): Unit = {
+        dut.gpu.req.valid.poke(true.B)
+        dut.gpu.req.bits.addr.poke(addr.U)
+        dut.gpu.req.bits.data.poke(data.U(512.W))
+        dut.gpu.req.bits.isWrite.poke(isW.B)
+        dut.gpu.resp.ready.poke(true.B)
+        var guard = 0
+        while (!(dut.gpu.req.valid.peek().litToBoolean && dut.gpu.req.ready.peek().litToBoolean) && guard < 100) {
+          dut.clock.step(); guard += 1
+        }
+        dut.clock.step()
+        dut.gpu.req.valid.poke(false.B)
+        var rg = 0
+        while (!dut.gpu.resp.valid.peek().litToBoolean && rg < 100) { dut.clock.step(); rg += 1 }
+      }
+
+      // seed X and Z arrays
+      for (l <- 0 until n) issue(xBase + l * 0x40L, isW = true, operandLine(xVals(l)))
+      for (l <- 0 until n) issue(zBase + l * 0x40L, isW = true, operandLine(zVals(l)))
+
+      // launch the SIMT kernel
+      dut.simt_start.poke(true.B)
+      dut.simt_baseX.poke(xBase.U)
+      dut.simt_baseZ.poke(zBase.U)
+      dut.simt_baseY.poke(yBase.U)
+      dut.simt_nLines.poke(n.U)
+      dut.clock.step()
+      dut.simt_start.poke(false.B)
+
+      var guard = 0
+      while (!dut.simt_done.peek().litToBoolean && guard < 8000) { dut.clock.step(); guard += 1 }
+      assert(dut.simt_done.peek().litToBoolean, "SIMT kernel never finished")
+
+      // verify the summed Y array
+      for (l <- 0 until n) {
+        issue(yBase + l * 0x40L, isW = false, 0)
+        val bits = dut.gpu.resp.bits.peek().litValue
+        for (i <- 0 until 32) {
+          val got = ((bits >> (i * 16)) & 0xffff).toInt
+          assert(got == expVals(l)(i), s"line $l lane $i: got $got, expected ${expVals(l)(i)}")
+        }
+      }
+    }
+  }
 }

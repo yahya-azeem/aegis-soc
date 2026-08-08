@@ -2,7 +2,7 @@ package aegis
 
 import chisel3._
 import aegis.cpu.{CoreMemToHBM, RiscVICore}
-import aegis.gpu.GPUL2Cache
+import aegis.gpu.{GPUL2Cache, SimtCore}
 import aegis.bridge.AXIToMemReq
 import aegis.fixedfunc.GemmToMem
 import aegis.memory.SplitPrioritizer
@@ -35,6 +35,15 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   // real shared-memory pool)
   val gpu = IO(Flipped(new MemInterface))
 
+  // On-die SIMT GPU core: launches an element-wise kernel over arrays in the
+  // shared HBM3 and signals completion. Also drives the card's IRQ line.
+  val simt_start  = IO(Input(Bool()))
+  val simt_baseX  = IO(Input(UInt(64.W)))
+  val simt_baseZ  = IO(Input(UInt(64.W)))
+  val simt_baseY  = IO(Input(UInt(64.W)))
+  val simt_nLines = IO(Input(UInt(16.W)))
+  val simt_done   = IO(Output(Bool()))
+
   // GEMM accelerator control
   val gemm_start = IO(Input(Bool()))
   val gemm_base = IO(Input(UInt(64.W)))
@@ -56,10 +65,19 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   cpuAdp.io.hbm.req <> split.io.soc.cpu_req
   split.io.soc.cpu_resp <> cpuAdp.io.hbm.resp
 
-  // ---- GPU: one cluster through the real L2/Adapter into the stack ----
-  val l2 = Module(new GPUL2Cache(1))
+  // ---- GPU: one external cluster + an on-die SIMT core through the real
+  //          L2/Adapter into the stack ----
+  val l2 = Module(new GPUL2Cache(2))
   val gpuAdp = Module(new AXIToMemReq)
+  val simt = Module(new SimtCore(32))
   gpu <> l2.io.cluster(0)
+  simt.io.mem <> l2.io.cluster(1)
+  simt.io.start := simt_start
+  simt.io.baseX := simt_baseX
+  simt.io.baseZ := simt_baseZ
+  simt.io.baseY := simt_baseY
+  simt.io.nLines := simt_nLines
+  simt_done := simt.io.done
 
   gpuAdp.io.axi.AWID := l2.io.mem.AWID
   gpuAdp.io.axi.AWADDR := l2.io.mem.AWADDR
