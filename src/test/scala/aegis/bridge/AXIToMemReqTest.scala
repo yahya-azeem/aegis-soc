@@ -48,6 +48,9 @@ class AXIToMemTop(implicit config: AegisConfig) extends Module {
   split.io.soc.cpu_req.valid := false.B
   split.io.soc.cpu_req.bits := DontCare
   split.io.soc.cpu_resp.ready := true.B
+  split.io.soc.acc_req.valid := false.B
+  split.io.soc.acc_req.bits := DontCare
+  split.io.soc.acc_resp.ready := true.B
   split.io.mode := SplitMode.ai.U
   split.io.mem_axi.AWREADY := false.B
   split.io.mem_axi.WREADY := false.B

@@ -40,6 +40,10 @@ class SoCFabric(implicit config: AegisConfig) extends Module {
   io.mem.gpu_req.bits := crossbar.io.mem_gpu_req.bits
   crossbar.io.mem_gpu_req.ready := io.mem.gpu_req.ready
 
+  io.mem.acc_req.valid := false.B
+  io.mem.acc_req.bits := DontCare
+  io.mem.acc_resp.ready := true.B
+
   crossbar.io.mem_cpu_resp <> io.mem.cpu_resp
   crossbar.io.mem_gpu_resp <> io.mem.gpu_resp
 }

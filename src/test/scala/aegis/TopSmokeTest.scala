@@ -57,6 +57,8 @@ class TopSmokeTest extends AnyFlatSpec with ChiselSim {
 
       dut.gpu.req.valid.poke(false.B)
       dut.gpu.resp.ready.poke(true.B)
+      dut.gemm_start.poke(false.B)
+      dut.gemm_base.poke(0.U)
 
       // CPU: store 1234 to 0x40, then read it back to x2, then halt.
       // The whole program runs on the real core through the real HBM3.
@@ -105,6 +107,65 @@ class TopSmokeTest extends AnyFlatSpec with ChiselSim {
       runUntilHalt(dut)
       assert(dut.regs(2).peek().litValue.toInt == 0xBADF00D,
         s"CPU load got ${dut.regs(2).peek().litValue}")
+    }
+  }
+
+  it should "run the GEMM engine inside the real Top against the shared HBM3" in {
+    simulate(new Top(0)(defaultConfig)) { dut =>
+      val n = 8
+      val aFlat = for (i <- 0 until n; j <- 0 until n) yield 2 * i + j
+      val bFlat = for (i <- 0 until n; j <- 0 until n) yield i * n + j
+      val expected = for (i <- 0 until n; j <- 0 until n) yield
+        (0 until n).map(k => (2 * i + k) * (k * n + j)).sum
+      val base = 0x800L
+
+      def operandLine(raw: Seq[Int]): BigInt =
+        raw.zipWithIndex.foldLeft(BigInt(0)) { case (acc, (v, i)) =>
+          acc | (BigInt(v & 0xffff) << (i * 16))
+        }
+
+      def issue(addr: Long, isW: Boolean, data: BigInt): Unit = {
+        dut.gpu.req.valid.poke(true.B)
+        dut.gpu.req.bits.addr.poke(addr.U)
+        dut.gpu.req.bits.data.poke(data.U(512.W))
+        dut.gpu.req.bits.isWrite.poke(isW.B)
+        dut.gpu.resp.ready.poke(true.B)
+        var guard = 0
+        while (!(dut.gpu.req.valid.peek().litToBoolean && dut.gpu.req.ready.peek().litToBoolean) && guard < 100) {
+          dut.clock.step(); guard += 1
+        }
+        dut.clock.step()
+        dut.gpu.req.valid.poke(false.B)
+        var rg = 0
+        while (!dut.gpu.resp.valid.peek().litToBoolean && rg < 100) { dut.clock.step(); rg += 1 }
+      }
+
+      // seed operand tiles through the GPU port (the engine's own memory port)
+      for (l <- 0 until 2) {
+        issue(base + l * 0x40L, isW = true, operandLine(aFlat.slice(l * 32, l * 32 + 32)))
+      }
+      for (l <- 0 until 2) {
+        issue(base + 0x80L + l * 0x40L, isW = true, operandLine(bFlat.slice(l * 32, l * 32 + 32)))
+      }
+
+      // start the GEMM
+      dut.gemm_start.poke(true.B)
+      dut.gemm_base.poke(base.U)
+      dut.clock.step()
+      dut.gemm_start.poke(false.B)
+
+      var guard = 0
+      while (dut.gemm_busy.peek().litToBoolean && guard < 5000) { dut.clock.step(); guard += 1 }
+      assert(!dut.gemm_busy.peek().litToBoolean, "GEMM never finished")
+
+      // read back the results and verify
+      val got = scala.collection.mutable.ArrayBuffer[Int]()
+      for (l <- 0 until 4) {
+        issue(base + 0x100L + l * 0x40L, isW = false, 0)
+        val bits = dut.gpu.resp.bits.peek().litValue
+        for (e <- 0 until 16) got += ((bits >> (e * 32)) & 0xffffffffL).toInt
+      }
+      assert(got.toList == expected.toList, s"Top GEMM mismatch:\n got=${got.mkString(",")}\n exp=${expected.mkString(",")}")
     }
   }
 }

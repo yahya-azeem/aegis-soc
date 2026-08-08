@@ -17,6 +17,8 @@ class RiscVICoreMemTop(implicit config: AegisConfig) extends Module {
   split.io.soc.cpu_resp <> adp.io.hbm.resp
   split.io.soc.gpu_req := DontCare
   split.io.soc.gpu_resp.ready := false.B
+  split.io.soc.acc_req := DontCare
+  split.io.soc.acc_resp.ready := false.B
   split.io.mode := SplitMode.gaming.U
   split.io.mem_axi.AWREADY := false.B
   split.io.mem_axi.WREADY := false.B

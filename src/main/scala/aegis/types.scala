@@ -77,8 +77,10 @@ class MemInterface extends Bundle {
 class MemPort extends Bundle {
   val cpu_req = Flipped(Decoupled(new MemReq))
   val gpu_req = Flipped(Decoupled(new MemReq))
+  val acc_req = Flipped(Decoupled(new MemReq))
   val cpu_resp = Decoupled(UInt(512.W))
   val gpu_resp = Decoupled(UInt(512.W))
+  val acc_resp = Decoupled(UInt(512.W))
 }
 
 class FixedFuncUnit extends Bundle {

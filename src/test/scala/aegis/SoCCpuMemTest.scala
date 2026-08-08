@@ -77,6 +77,9 @@ class SoCSharedMemTop(implicit config: AegisConfig) extends Module {
   split.io.soc.cpu_resp <> cpuAdp.io.hbm.resp
   gpuAdp.io.mem.req <> split.io.soc.gpu_req
   split.io.soc.gpu_resp <> gpuAdp.io.mem.resp
+  split.io.soc.acc_req.valid := false.B
+  split.io.soc.acc_req.bits := DontCare
+  split.io.soc.acc_resp.ready := true.B
   split.io.mode := SplitMode.ai.U
   split.io.mem_axi.AWREADY := false.B
   split.io.mem_axi.WREADY := false.B

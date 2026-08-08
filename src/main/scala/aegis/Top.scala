@@ -4,16 +4,17 @@ import chisel3._
 import aegis.cpu.{CoreMemToHBM, RiscVICore}
 import aegis.gpu.GPUL2Cache
 import aegis.bridge.AXIToMemReq
+import aegis.fixedfunc.GemmToMem
 import aegis.memory.SplitPrioritizer
 
 /**
- * The top-level SoC. A real RV32I CPU (through CoreMemToHBM) and a GPU L2
- * cache (through the AXI adapter) both attach to the same 512-bit HBM3 stack
- * via the split-prioritizer -- the shared-memory fabric of the chip.
+ * The top-level SoC. A real RV32I CPU (through CoreMemToHBM), a GPU L2 cache
+ * (through the AXI adapter) and a fixed-function GEMM engine all attach to the
+ * same 512-bit HBM3 stack via the split-prioritizer -- the shared-memory
+ * fabric of the chip.
  *
- * mem_axi is the stack's HBM3 AXI port (a slave the memory controller
- * drives); a second AXI master from a full GPU cluster (or the fabric
- * bridges) can be strapped to the internal gpu tile through the router.
+ * mem_axi is the stack's HBM3 AXI port (a mirror of the current transaction,
+ * for co-simulation / observability).
  */
 class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   override def desiredName = config.socName
@@ -34,9 +35,12 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   // real shared-memory pool)
   val gpu = IO(Flipped(new MemInterface))
 
-  val split = Module(new SplitPrioritizer)
+  // GEMM accelerator control
+  val gemm_start = IO(Input(Bool()))
+  val gemm_base = IO(Input(UInt(64.W)))
+  val gemm_busy = IO(Output(Bool()))
 
-  // ---- CPU: real RV32I core into the shared stack ----
+  val split = Module(new SplitPrioritizer)
 
   // ---- CPU: real RV32I core into the shared stack ----
   val core = Module(new RiscVICore(useExtMem = true))
@@ -89,6 +93,16 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
 
   gpuAdp.io.mem.req <> split.io.soc.gpu_req
   split.io.soc.gpu_resp <> gpuAdp.io.mem.resp
+
+  // ---- Fixed function: GEMM engine into the shared stack ----
+  val gemm = Module(new GemmToMem(8))
+  gemm.io.cmd.valid := gemm_start
+  gemm.io.cmd.bits.opcode := 0.U
+  gemm.io.cmd.bits.data := gemm_base
+  gemm_busy := gemm.io.busy
+
+  gemm.io.mem.req <> split.io.soc.acc_req
+  split.io.soc.acc_resp <> gemm.io.mem.resp
 
   split.io.mode := memMode.U(2.W)
   mem_mode := memMode.U(2.W)
