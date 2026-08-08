@@ -104,73 +104,76 @@ class VectorPipeline extends Bundle {
   val valid = Output(Bool())
 }
 
-class GPUL2Cache(val nClusters: Int = 8, val latency: Int = 2) extends Module {
+class GPUL2Cache(val nClusters: Int = 8) extends Module {
   val io = IO(new Bundle {
     val cluster = Vec(nClusters, Flipped(new MemInterface))
     val mem = new AXIBundle(64, 512)
   })
 
+  // round-robin arbitration across clusters (same select as before)
   val last = RegInit(0.U(log2Ceil(nClusters).W))
-  val in_flight = RegInit(false.B)
-  val serving = RegInit(0.U(log2Ceil(nClusters).W))
-  val L = RegInit(0.U(log2Ceil(latency).W))
-  val echo = Reg(UInt(512.W))
-  val ar_pending = RegInit(false.B)
-  val ar_addr = RegInit(0.U(64.W))
-
   val v = (0 until nClusters).map(i => io.cluster(i).req.valid)
   val lower = (0 until nClusters).map(i => (i.U > last) && v(i))
   val upper = (0 until nClusters).map(i => (i.U <= last) && v(i))
   val any = lower.reduce(_ || _) || upper.reduce(_ || _)
-
   val sel = Mux(lower.reduce(_ || _), PriorityEncoder(lower), PriorityEncoder(upper))
   val onehot = (0 until nClusters).map(i => i.U === sel)
 
+  // real AXI transaction FSM: capture one request, drive AW+W / AR+R, and
+  // return the data that actually came back from memory to the waiting cluster.
+  val s_idle :: s_aw :: s_wd :: s_b :: s_ar :: s_rc :: s_resp :: Nil = Enum(7)
+  val state = RegInit(s_idle)
+  val sel_r   = RegInit(0.U(log2Ceil(nClusters).W))
+  val addr_r  = RegInit(0.U(64.W))
+  val wdata_r = RegInit(0.U(512.W))
+  val rdata_r = RegInit(0.U(512.W))
+  val isW_r   = RegInit(false.B)
+
+  for (i <- 0 until nClusters) {
+    io.cluster(i).req.ready  := (state === s_idle) && (i.U === sel)
+    io.cluster(i).resp.valid := (state === s_b || state === s_resp) && (i.U === sel_r)
+    io.cluster(i).resp.bits  := Mux(isW_r, 0.U, rdata_r)
+  }
+
   io.mem.AWID := 0.U
-  io.mem.AWADDR := 0.U
+  io.mem.AWADDR := addr_r
   io.mem.AWLEN := 0.U
   io.mem.AWSIZE := 6.U
   io.mem.AWBURST := 0.U
-  io.mem.AWVALID := false.B
-  io.mem.WDATA := 0.U
-  io.mem.WSTRB := 0.U
-  io.mem.WLAST := false.B
-  io.mem.WVALID := false.B
-  io.mem.BREADY := false.B
+  io.mem.AWVALID := state === s_aw
+  io.mem.WDATA := wdata_r
+  io.mem.WSTRB := ~0.U((512 / 8).W)
+  io.mem.WLAST := true.B
+  io.mem.WVALID := state === s_wd
+  io.mem.BREADY := state === s_b
   io.mem.ARID := 0.U
-  io.mem.ARADDR := ar_addr
+  io.mem.ARADDR := addr_r
   io.mem.ARLEN := 0.U
   io.mem.ARSIZE := 6.U
   io.mem.ARBURST := 0.U
-  io.mem.ARVALID := ar_pending
-  io.mem.RREADY := false.B
+  io.mem.ARVALID := state === s_ar
+  io.mem.RREADY := state === s_rc
 
-  for (i <- 0 until nClusters) {
-    io.cluster(i).req.ready := !in_flight && any && (i.U === sel)
-    io.cluster(i).resp.valid := in_flight && (L === 0.U) && io.cluster(i).resp.ready && (i.U === serving)
-    io.cluster(i).resp.bits := echo
-  }
-
-  when(!in_flight && any) {
-    in_flight := true.B
-    serving := sel
-    last := sel
-    L := (latency - 1).U
-    echo := Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.data))
-    ar_pending := true.B
-    ar_addr := Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.addr))
-  }
-
-  when(ar_pending && io.mem.ARREADY) { ar_pending := false.B }
-
-  when(in_flight) {
-    when(L === 0.U) {
-      when(io.cluster(serving).resp.ready) {
-        in_flight := false.B
+  switch(state) {
+    is(s_idle) {
+      when(any) {
+        sel_r := sel
+        addr_r := Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.addr))
+        wdata_r := Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.data))
+        last := sel
+        when(Mux1H(onehot, (0 until nClusters).map(i => io.cluster(i).req.bits.isWrite))) {
+          state := s_aw
+        }.otherwise {
+          state := s_ar
+        }
       }
-    }.otherwise {
-      L := L - 1.U
     }
+    is(s_aw)   { when(io.mem.AWREADY) { state := s_wd } }
+    is(s_wd)   { when(io.mem.WREADY)  { state := s_b } }
+    is(s_b)    { when(io.mem.BVALID) { state := s_idle } }
+    is(s_ar)   { when(io.mem.ARREADY) { state := s_rc } }
+    is(s_rc)   { when(io.mem.RVALID)  { rdata_r := io.mem.RDATA; state := s_resp } }
+    is(s_resp) { when(io.cluster(sel_r).resp.fire) { state := s_idle } }
   }
 }
 
