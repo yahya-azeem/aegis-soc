@@ -121,7 +121,7 @@ class GPUL2Cache(val nClusters: Int = 8) extends Module {
 
   // real AXI transaction FSM: capture one request, drive AW+W / AR+R, and
   // return the data that actually came back from memory to the waiting cluster.
-  val s_idle :: s_aw :: s_wd :: s_b :: s_ar :: s_rc :: s_resp :: Nil = Enum(7)
+  val s_idle :: s_aw :: s_wd :: s_bwait :: s_wack :: s_ar :: s_rc :: s_resp :: Nil = Enum(8)
   val state = RegInit(s_idle)
   val sel_r   = RegInit(0.U(log2Ceil(nClusters).W))
   val addr_r  = RegInit(0.U(64.W))
@@ -131,7 +131,7 @@ class GPUL2Cache(val nClusters: Int = 8) extends Module {
 
   for (i <- 0 until nClusters) {
     io.cluster(i).req.ready  := (state === s_idle) && (i.U === sel)
-    io.cluster(i).resp.valid := (state === s_b || state === s_resp) && (i.U === sel_r)
+    io.cluster(i).resp.valid := (state === s_wack || state === s_resp) && (i.U === sel_r)
     io.cluster(i).resp.bits  := Mux(isW_r, 0.U, rdata_r)
   }
 
@@ -145,7 +145,7 @@ class GPUL2Cache(val nClusters: Int = 8) extends Module {
   io.mem.WSTRB := ~0.U((512 / 8).W)
   io.mem.WLAST := true.B
   io.mem.WVALID := state === s_wd
-  io.mem.BREADY := state === s_b
+  io.mem.BREADY := state === s_bwait
   io.mem.ARID := 0.U
   io.mem.ARADDR := addr_r
   io.mem.ARLEN := 0.U
@@ -169,8 +169,9 @@ class GPUL2Cache(val nClusters: Int = 8) extends Module {
       }
     }
     is(s_aw)   { when(io.mem.AWREADY) { state := s_wd } }
-    is(s_wd)   { when(io.mem.WREADY)  { state := s_b } }
-    is(s_b)    { when(io.mem.BVALID) { state := s_idle } }
+    is(s_wd)   { when(io.mem.WREADY)  { state := s_bwait } }
+    is(s_bwait) { when(io.mem.BVALID) { state := s_wack } }
+    is(s_wack) { when(io.cluster(sel_r).resp.fire) { state := s_idle } }
     is(s_ar)   { when(io.mem.ARREADY) { state := s_rc } }
     is(s_rc)   { when(io.mem.RVALID)  { rdata_r := io.mem.RDATA; state := s_resp } }
     is(s_resp) { when(io.cluster(sel_r).resp.fire) { state := s_idle } }
