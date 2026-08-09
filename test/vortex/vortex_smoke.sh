@@ -76,3 +76,36 @@ if [ -f "${OUT}/emit/Aegis.sv" ]; then
       "${EMIT}/verification/cover/layers-Aegis-Verification-Cover.sv" 2>&1 | tail -3
   echo "Aegis + Vortex co-elaboration done"
 fi
+
+# End-to-end: actually BUILD (not just lint) the Chisel-emitted SoC top with the
+# real Vortex RTL and run a kernel through the SoC's own vx_* + HBM3 ports.
+# Run `make verilog-vortex` first. The build is cached; the run always executes.
+# Parallelism is kept low to stay gentle on system memory (14GB box) since a
+# full --cc build of 230 modules is heavy.
+if [ -f "${OUT}/emit/Aegis.sv" ]; then
+  if [ ! -f "${OUT}/obj_dir-soc/VAegis" ]; then
+    echo "== scope: Aegis(top) + real Vortex RTL end-to-end build =="
+    EMIT="${OUT}/emit"
+    verilator --cc --top-module Aegis \
+        --language 1800-2012 --assert -Wno-fatal -Wno-DECLFILENAME -Wno-REDEFMACRO \
+        --x-initial unique --x-assign unique --threads 1 \
+        --Mdir "${OUT}/obj_dir-soc" \
+        -DVX_CFG_XLEN=32 -DVX_CFG_XLEN_32 -DVX_CFG_FLEN=32 \
+        -I"${OUT}" -I"${EMIT}" -I"${EMIT}/verification" \
+        -I"${EMIT}/verification/assert" -I"${EMIT}/verification/assume" -I"${EMIT}/verification/cover" \
+        -I"${VX}/hw/rtl" -I"${VX}/hw/rtl/libs" -I"${VX}/hw/rtl/interfaces" -I"${VX}/hw/rtl/core" \
+        -I"${VX}/hw/rtl/mem" -I"${VX}/hw/rtl/cache" -I"${VX}/hw/rtl/fpu" \
+        $(cat "${OUT}/srcs.txt") \
+        "${REPO_ROOT}/test/vortex/VortexShell.sv" \
+        "${EMIT}/Aegis.sv" \
+        "${EMIT}/verification/layers-Aegis-Verification.sv" \
+        "${EMIT}/verification/assert/layers-Aegis-Verification-Assert.sv" \
+        "${EMIT}/verification/assume/layers-Aegis-Verification-Assume.sv" \
+        "${EMIT}/verification/cover/layers-Aegis-Verification-Cover.sv" \
+        --exe "${REPO_ROOT}/test/vortex/vortex_soc_testbench.cpp" 2>&1 | tail -6
+    echo "== make (constrained to -j2 to protect memory) =="
+    make -C "${OUT}/obj_dir-soc" -j2 -f "VAegis.mk" 2>&1 | tail -4
+  fi
+  echo "== run: end-to-end Aegis + Vortex =="
+  "${OUT}/obj_dir-soc/VAegis"
+fi
