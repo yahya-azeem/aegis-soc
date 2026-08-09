@@ -30,6 +30,7 @@ package object aegis {
     registerFileSize: Int = 128,
     tensorCores:   Boolean = true,
     vulkanSupport: Boolean = true,
+    vortexRtl:     Boolean = false, // BlackBox the real Vortex_axi RTL on the acc port
   )
 
   case class MemoryConfig(

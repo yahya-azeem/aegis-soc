@@ -2,7 +2,7 @@ package aegis
 
 import chisel3._
 import aegis.cpu.{CoreMemToHBM, RiscVICore}
-import aegis.gpu.{GPUL2Cache, SimtCore}
+import aegis.gpu.{GPUL2Cache, SimtCore, VortexAccelerator}
 import aegis.bridge.AXIToMemReq
 import aegis.fixedfunc.GemmToMem
 import aegis.memory.SplitPrioritizer
@@ -48,6 +48,16 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   val gemm_start = IO(Input(Bool()))
   val gemm_base = IO(Input(UInt(64.W)))
   val gemm_busy = IO(Output(Bool()))
+
+  // Real Vortex GPGPU control (driven only when config.gpu.vortexRtl)
+  val vx_dcr_valid = IO(Input(Bool()))
+  val vx_dcr_rw = IO(Input(Bool()))
+  val vx_dcr_addr = IO(Input(UInt(12.W)))
+  val vx_dcr_data = IO(Input(UInt(32.W)))
+  val vx_dcr_rsp_valid = IO(Output(Bool()))
+  val vx_dcr_rsp_data = IO(Output(UInt(32.W)))
+  val vx_start = IO(Input(Bool()))
+  val vx_busy = IO(Output(Bool()))
 
   val split = Module(new SplitPrioritizer)
 
@@ -112,15 +122,38 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   gpuAdp.io.mem.req <> split.io.soc.gpu_req
   split.io.soc.gpu_resp <> gpuAdp.io.mem.resp
 
-  // ---- Fixed function: GEMM engine into the shared stack ----
-  val gemm = Module(new GemmToMem(8))
-  gemm.io.cmd.valid := gemm_start
-  gemm.io.cmd.bits.opcode := 0.U
-  gemm.io.cmd.bits.data := gemm_base
-  gemm_busy := gemm.io.busy
+  // ---- Fixed function / accelerator into the shared stack ----
+  // When config.gpu.vortexRtl is set, the real Vortex GPGPU RTL is black-boxed
+  // on the acc port (co-simulated out-of-tree with the external SV sources).
+  // Otherwise the Chisel GEMM engine occupies the same fabric port.
+  vx_dcr_rsp_valid := false.B
+  vx_dcr_rsp_data := 0.U
+  vx_busy := false.B
+  gemm_busy := false.B
 
-  gemm.io.mem.req <> split.io.soc.acc_req
-  split.io.soc.acc_resp <> gemm.io.mem.resp
+  if (config.gpu.vortexRtl) {
+    val vx = Module(new VortexAccelerator(32, 512))
+    vx.io.dcr.req_valid := vx_dcr_valid
+    vx.io.dcr.req_rw := vx_dcr_rw
+    vx.io.dcr.req_addr := vx_dcr_addr
+    vx.io.dcr.req_data := vx_dcr_data
+    vx_dcr_rsp_valid := vx.io.dcr.rsp_valid
+    vx_dcr_rsp_data := vx.io.dcr.rsp_data
+    vx.io.start := vx_start
+    vx_busy := vx.io.busy
+
+    vx.io.mem.req <> split.io.soc.acc_req
+    split.io.soc.acc_resp <> vx.io.mem.resp
+  } else {
+    val gemm = Module(new GemmToMem(8))
+    gemm.io.cmd.valid := gemm_start
+    gemm.io.cmd.bits.opcode := 0.U
+    gemm.io.cmd.bits.data := gemm_base
+    gemm_busy := gemm.io.busy
+
+    gemm.io.mem.req <> split.io.soc.acc_req
+    split.io.soc.acc_resp <> gemm.io.mem.resp
+  }
 
   split.io.mode := memMode.U(2.W)
   mem_mode := memMode.U(2.W)
