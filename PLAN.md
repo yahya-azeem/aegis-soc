@@ -1,326 +1,256 @@
-# RISC-V SoC Chisel Implementation Plan
+# Aegis SoC — RISC-V SoC in Chisel — Implementation Plan
 
-Based on:
-- **XiangShan** (kunminghu-v3): https://github.com/OpenXiangShan/XiangShan/tree/kunminghu-v3
-- **Vortex GPGPU**: https://github.com/vortexgpgpu/vortex
+A single-die SoC written in Chisel that federates a RISC-V CPU core, a Vortex-style
+GPGPU, and fixed-function blocks behind one **unified shared memory** model —
+sized and shaped to be elaborable, simulatable, and verifiable on a laptop.
+
+The project deliberately targets a **small, realistic footprint** (256MB unified
+LPDDR5-class memory, RV32I grade CPU) rather than hyperscale numbers, so the whole
+design can be co-simulated end-to-end by Verilator on this machine.
 
 ---
 
-## 1. Repository Structure Overview
+## 1. Design goals (what actually holds today)
 
-### 1.1 XiangShan (kunminghu-v3) Tree
+- **Real, self-contained memory.** `HBM3Stack` owns a banked DRAM array with an
+  open-page controller (activate/precharge/refresh). Reads and writes are served
+  *from the array itself*, not echoed from a testbench. The AXI `mem` port is an
+  observability mirror of the current PHY transaction.
+- **Shared memory, one stack.** CPU lane, GPU lane, and an accelerator lane all
+  attach to the same stack through `SplitPrioritizer`, which arbitrates CPU/GPU/ACC
+  with a QoS `mode` (unified vs. low-latency CPU bias).
+- **Bootable top.** `Top` elaborates to `Aegis` and emits SystemVerilog whose
+  verification-layer files are genuinely resolvable by Verilator.
+- **Real external RTL.** The actual Vortex GPGPU RTL is BlackBox'd onto the SoC's
+  accelerator lane and co-simulated out-of-tree with Verilator (see §5).
 
-```
-XiangShan/
-├── src/main/scala/
-│   ├── device/                # Virtual devices for simulation
-│   ├── system/                # SoC wrapper (top-level connectivity)
-│   ├── top/                   # Top module (XSTop, SoC integration)
-│   ├── utils/                 # Utility code
-│   └── xiangshan/             # Main CPU design code
-│       ├── backend/           # Execute, writeback stages
-│       ├── frontend/          # Fetch, decode, BTB, branch predictor
-│       ├── cache/             # L1/L2 cache hierarchy
-│       ├── csr/               # Control/status registers
-│       ├── lsu/               # Load/store unit
-│       ├── memblock/          # Memory block
-│       ├── pmu/               # Performance monitoring
-│       └── transforms/        # FIRRTL transforms
-├── XSCache/                   # Cache subsystem (submodule)
-├── difftest/                  # Difference testing framework
-├── yunsuan/                   # Vector/SIMD unit (submodule)
-├── macros/                    # Scala macros for CSR
-├── project/                   # Build properties
-├── scripts/                   # Agile development scripts
-├── debug/                     # Debug utilities
-├── docs/                      # Documentation
-├── ready-to-run/              # Pre-built simulation images
-├── rocket-chip/               # Rocket Chip library (submodule)
-├── utility/                   # Utility library (submodule)
-├── build.mill                 # Mill build definition
-└── Makefile                   # Top-level build targets
-```
+### Honest scope guardrails
 
-### 1.2 Vortex GPGPU Tree
+- The CPU is an **in-order RV32I boot core** (`RiscVICore`). Multi-core complex is a
+  structurally-simple `NutShellWrapper` file used by unit tests. There is no
+  out-of-order QEMU-class CPU, and none is planned.
+- GPU is a small SIMT core (`SimtCore`) plus, optionally, the **real Vortex RTL** as
+  a black box. Not an entire software driver stack.
+- Memory is **256MB unified LPDDR5-class at 3.2 Gbps**, not a 128GB HBM3 pool. The
+  numbers in `MemoryConfig` describe the model, which is simulatable here.
+
+---
+
+## 2. Repository layout
 
 ```
-vortex/
-├── hw/rtl/                    # Hardware RTL (SystemVerilog)
-│   ├── VX_define.vh           # Global defines/parameters
-│   ├── VX_gpu_pkg.sv          # GPU package (types, config)
-│   ├── VX_cluster.sv          # Core cluster wrapper
-│   ├── VX_socket.sv           # Socket interconnect
-│   ├── VX_graphics.sv         # Graphics pipeline
-│   ├── VX_kmu.sv              # Kernel management unit
-│   ├── Vortex.sv              # Top-level GPU wrapper
-│   ├── Vortex_axi.sv          # AXI interface wrapper
-│   └── afu/                   # FPGA AFU shell
-├── hw/dpi/                    # DPI for simulation
-├── software/                  # Software stack
-│   ├── runtime/               # Runtime API (OpenCL, Vulkan)
-│   ├── driver/                # Kernel driver
-│   └── libs/                  # Libraries
-├── ci/                        # CI scripts
-├── docs/                      # Design documentation
-├── VX_config.toml             # Configuration parameters
-├── VX_types.toml              # Type definitions
-├── configure                  # Configure script
-└── Makefile.in                # Build system
+src/main/scala/aegis/
+├── Top.scala                 # SoC top: CPU+GPU+fixed-func sharing SplitPrioritizer
+├── package.scala             # AegisConfig + per-domain config case classes
+├── types.scala               # shared bundles (AXI, MemReq, MemPort, ...)
+├── cpu/
+│   ├── RiscVCore.scala       # RV32I in-order boot core + CoreMemToHBM adapter
+│   └── NutShellWrapper.scala # multi-core complex scaffold (NutShellCore/L2/L3/crossbar)
+├── gpu/
+│   ├── SimtCore.scala        # on-die SIMT vector kernel core
+│   ├── VortexWrapper.scala   # GPU L2 cache + AXI adapter into the stack
+│   └── VortexBlackBox.scala  # Chisel BlackBox of real Vortex_axi RTL
+├── memory/
+│   ├── HBM3Stack.scala       # self-serving banked DRAM + open-page controller
+│   └── SplitPrioritizer.scala# CPU/GPU/ACC arbitration into the stack
+├── bridge/                   # AXIToMemReq, AXITileLinkBridge
+├── fixedfunc/                # GemmToMem, OpenGeMM/RayFlex wrappers
+└── interconnect/SoCFabric.scala
+
+src/test/scala/aegis/         # 25 ChiselSim + emit test suites
+test/vortex/                  # out-of-tree Verilator co-sim of the real Vortex RTL
+build/                        # generated: rtl/, vortex-smoke/
 ```
 
 ---
 
-## 2. CPU Complex: XiangShan Kunminghu V3 Integration
+## 3. CPU complex: RV32I boot core (NutShell in-order shaping)
 
-### 2.1 Pipeline Architecture
+### 3.1 What exists
 
-| Stage | File(s) | Description |
-|-------|---------|-------------|
-| Fetch | `src/main/scala/xiangshan/frontend/` | PC gen, ICache, ITLB, branch prediction |
-| Decode | `src/main/scala/xiangshan/frontend/` | Instruction decode, rename |
-| Issue | `src/main/scala/xiangshan/backend/` | Reservation stations, wakeup/select logic |
-| Execute | `src/main/scala/xiangshan/backend/` | ALU, FPU, branch units |
-| Load/Store | `src/main/scala/xiangshan/lsu/` | Load/store queue, dcache, DTLB |
-| Commit | `src/main/scala/xiangshan/backend/` | ROB, writeback, commit logic |
+| Component | File | Role |
+|-----------|------|------|
+| RV32I core | `cpu/RiscVCore.scala` | In-order RISC-V core with a word-level external memory port; boots from a small program image |
+| CPU→HBM | `cpu/CoreMemToHBM.scala` | 32-bit word requests widened to 512-bit stack lines |
+| Multi-core scaffold | `cpu/NutShellWrapper.scala` | `NutShellCore` → `L2CacheBank` → `CoreCrossbar` → `L3VCache` chain into AXI (unit-test subject; in-order by design) |
 
-### 2.2 Key Implementation Steps
+### 3.2 Parameters (`CPUConfig`)
 
-1. **Core integration**: Modify `src/main/scala/top/XSTop.scala` to wrap Kunminghu V3 core with TileLink/AXI interfaces
-2. **Multi-core config**: Parameterize via `src/main/scala/system/` for 2-8 core clusters
-3. **RVA23 compliance**: Verify CSR maps in `src/main/scala/xiangshan/csr/` for AIA, hypervisor extensions
-4. **Cache hierarchy**: Configure L1 (64KB I-cache + 64KB D-cache) and L2 (1MB/core) via cache generators in `XSCache/`
-5. **L3 V-Cache**: Add 3D-stacked SRAM controller over TileLink with 96-128MB capacity
-6. **Vector unit**: Integrate `yunsuan/` for RVV 1.0 with VLEN=128, DLEN=1024
+- 4 cores in-order, **1.0 GHz** target
+- L1 I/D **32KB** each, L2 **256KB**, L3 **4MB**
+- RVV config hooks (`vlen`/`dlen`) reserved, not yet exercised
 
-### 2.3 Configuration Parameters
-
-Key parameters in `XSCache/`:
-- `L2SetAssociative` (65+ tunable parameters)
-- `L3SetAssociative`
-- `CacheLineSize` (64B default)
-- `MSHRDepth` for miss handling
+Naming note: the design language and scaffold here follow the **NutShell** (NSCSCC
+winner, OSCPU) in-order philosophy — deliberately simple, bootable, verifiable —
+rather than a multi-issue out-of-order machine.
 
 ---
 
-## 3. GPU Complex: Vortex GPGPU Scaling
+## 4. GPU complex: SIMT core + real Vortex RTL
 
-### 3.1 Architecture Overview
+### 4.1 In-Chisel SIMT core
 
-```
-Vortex Top (Vortex.sv)
-├── Cluster 0..N (VX_cluster.sv)
-│   ├── Core 0..M (SIMT cores)
-│   │   ├── Fetch/Decode
-│   │   ├── Scalar pipeline (RISC-V IMA-zicsr-zfinx)
-│   │   └── Vector pipeline
-│   ├── Local Memory / Shared memory
-│   └── Tensor Core Unit (WGMMA, mixed-precision)
-├── L1/L2 Cache Subsystem
-├── Memory Fabric (VX_socket.sv)
-├── Command Processor
-├── Graphics Pipeline (VX_graphics.sv)
-│   ├── Rasterizer
-│   ├── TMU (Texture Mapping)
-│   └── ROP (Raster Output)
-└── AXI Interface (Vortex_axi.sv)
-```
+- `SimtCore` launches a bounded element-wise vector kernel against the shared
+  stack through the GPU lane and signals completion (`simt_done`).
+- `VortexWrapper` provides the GPU L2 cache + `AXIToMemReq` adapter; the external
+  cluster port and the on-die SIMT core both hang off it.
 
-### 3.2 Key Implementation Steps
+### 4.2 Real Vortex RTL as a Chisel BlackBox
 
-1. **Configuration**: Set `VX_config.toml` for 64-128 cores, 1.5GHz target
-2. **SIMT core scaling**: Modify `VX_cluster.sv` for wider warp sizes, larger register files
-3. **Tensor core integration**: Add WGMMA engines per cluster in `hw/rtl/`
-4. **Graphics pipeline**: Adapt `VX_graphics.sv` rasterizer, TMU, ROP for gaming workloads
-5. **Memory fabric**: Configure `VX_socket.sv` for 2048-bit bus to HBM3
-6. **Driver**: Use Mesa Lavapipe (`vortexpipe`) with VOLT LLVM-based SIMT compiler
+- `VortexBlackBox.scala` declares `VortexShell` (a flat-pin wrapper around
+  `Vortex_axi`) as a `BlackBox` with `desiredName = "VortexShell"`.
+- When `config.gpu.vortexRtl = true`, `Top` replaces the Chisel GEMM on the
+  accelerator lane with `VortexAccelerator` (BlackBox + AXI→mem adapter) and exposes
+  `vx_dcr_*`, `vx_start`, `vx_busy` control pins.
+- The real Verilog sources live in the mirrored `vortex/` checkout; they are **not**
+  compiled by sbt — the emitted `Aegis.sv` is co-simulated with them out-of-tree.
 
-### 3.3 Vortex 3.0 Features to Enable
+### 4.3 Parameters (`GPUConfig`)
 
-| Feature | Config File | Status |
-|---------|-------------|--------|
-| SIMT execution | `VX_config.toml` | Baseline |
-| Extended registers | Muon core | in v3 |
-| WGMMA tensor | `VX_types.toml` | in v3 |
-| FP8/INT8 support | `VX_config.toml` | in v3 |
-| Vulkan support | `ci/testcases/vulkan.yaml` | in v3 |
+- 8 clusters / 64 SIMT cores nominal (1 cluster used by the real-RTL smoke)
+- warp size 32, 64KB shared memory, **1.0 GHz**
 
 ---
 
-## 4. Fixed-Function Acceleration Co-Die
+## 5. Memory subsystem: unified shared stack (256MB)
 
-### 4.1 Components
+```
+RV32I CPU  ──── MemPort.cpu ──────┐
+Simt/GPU   ──── MemPort.gpu ──────┼─→ SplitPrioritizer ─→ HBM3Stack
+GEMM/Vortex ── MemPort.acc ───────┘        │
+                                          mode (unified / CPU-priority)
+```
 
-| Unit | Source | Function |
-|------|--------|----------|
-| Rasterizer | Vortex `VX_graphics.sv` | Primitive assembly, triangle setup |
-| TMU | Vortex `hw/rtl/` | Texture filtering, mipmap |
-| ROP | Vortex `hw/rtl/` | Z-buffer, alpha blend, AA |
-| RayFlex | `https://arxiv.org/pdf/2409.06000` | BVH traversal, ray-triangle intersection |
-| Systolic Array | OpenGeMM (`https://arxiv.org/html/2411.09543v2`) | Matrix multiply for AI upscaling |
-
-### 4.2 Implementation Order
-
-1. Implement RayFlex elastic pipeline with skid buffer
-2. Integrate RayFlex BVH engines as TileLink slaves
-3. Add TinyBVH software (single-header BVH lib) for driver support
-4. Generate OpenGeMM matrix units parameterized for FSR/DLSS-style upscaling
-5. Wire all fixed-function blocks via AXI4 interconnect
+- `HBM3Stack`: `2² banks × 2³ rows × 2³ cols` of 512-bit words = **16KB physical
+  model**; address→bank/row/column decode with open-page activate/precharge timing
+  and a refresh walker. `io.mem` is an AXI observability mirror — completion never
+  depends on it.
+- `SplitPrioritizer`: CPU always prioritized; GPU/ACC round-robin the remaining
+  bandwidth. `mode = ai` enables full open-page policy on the stack.
+- Config (`MemoryConfig`): **256MB unified**, 2 channels, 512-bit bus, 3.2 Gbps.
 
 ---
 
-## 5. Memory Subsystem: 128GB Dual-Rank Split-Prioritizer
+## 6. Fixed-function co-die
 
-### 5.1 Architecture
-
-```
-XiangShan CPU  ──┬── TileLink ──┐
-Vortex GPU    ──┬── AXI4 ──────┤
-Fixed-Func    ──┬── AXI4 ──────┼── Split-Prioritizer ── HBM3/LPDDR5X PHY
-RayFlex       ──┬── AXI4 ──────┘
-```
-
-### 5.2 Implementation Steps
-
-1. Implement split-prioritizer with QoS-aware arbitration
-2. **Gaming mode**: 16GB low-latency (CPU) + 112GB high-bandwidth (GPU)
-3. **AI mode**: full 128GB unified with open-page policy
-4. Integrate HBM3 controller IP (9.6 Gbps/pin, 1024-bit bus)
-5. Add AXI4-to-TileLink bridge from `rocket-chip/`
+- `GemmToMem`: real GEMM engine on the shared stack, third splitter port
+  (`gemm_start` / `gemm_base` / `gemm_busy`).
+- `OpenGeMMWrapper` / `RayFlexWrapper`: parameterized wrappers scaffolded for future
+  AI-upscaling and ray-tracing blocks; not yet silicon-real.
 
 ---
 
-## 6. Software Stack
+## 7. Build & verification workflow
 
-### 6.1 Driver Layer
-
-| Layer | Component | Integration |
-|-------|-----------|-------------|
-| CPU binary translation | FEX-Emu / Box64 | x86 → RISC-V JIT |
-| Graphics API | DXVK → Vulkan | DirectX 11/12 translation |
-| SPIR-V compiler | VOLT (LLVM) | JIT shader compilation |
-| GPU driver | Mesa + vortexpipe | Vulkan / OpenCL support |
-| AI framework | OpenCL / HIP | via pocl-vortex / chipStar |
-
-### 6.2 Shader Translation Pipeline
-
-```
-Game Binary (x86/DirectX)
-    → FEX-Emu (x86 → RISC-V)
-    → DXVK (DirectX → Vulkan SPIR-V)
-    → VOLT (SPIR-V → Vortex machine code)
-    → Vortex SIMT execution
-```
-
----
-
-## 7. Build & Simulation Workflow
-
-### 7.1 XiangShan Build
+### 7.1 Elaboration (sbt / Makefile)
 
 ```bash
-# From XiangShan repo root
-git checkout kunminghu-v3
-make init           # Initialize submodules
-make verilog        # Generate SystemVerilog (build/rtl/XSTop.sv)
-make emu CONFIG=MinimalConfig EMU_THREADS=4 -j$(nproc)
+make compile            # sbt compile
+make verilog            # emit Aegis SystemVerilog to build/rtl/ (split file tree)
+make verilog-vortex     # same SoC with real Vortex RTL BlackBox → build/vortex-smoke/emit/
+make test               # full sbt suite (50 ChiselSim + emit tests)
 ```
 
-### 7.2 Vortex Build
+`EmitSupport` re-materializes CIRCT's concatenated multi-file dump into a real file
+tree (`Aegis.sv` + `verification/…`), so the verification-layer `include`s resolve
+under Verilator.
+
+### 7.2 Raw-Verilator harness (default path)
 
 ```bash
-# From vortex repo root
-./configure
-make
-make simx          # Software simulator
+cd test && make -f Makefile.test test
 ```
 
-### 7.3 Co-simulation
+Compiles `build/rtl/Aegis.sv` + its verification layers with the plain `test_bench.cpp`
+into `build/obj_dir` and runs 1010 ticks.
 
+### 7.3 Real Vortex RTL co-simulation (out-of-tree)
+
+```bash
+make verilog-vortex && test/vortex/vortex_smoke.sh
 ```
-XiangShan (Verilator) ←→ difftest/NEMU ←→ Vortex (simx)
-        ↓                        ↓
-    Memory fabric          Shared memory model
-```
+
+The smoke script runs three scopes against the mirrored `vortex/` sources:
+1. **Standalone** — compile `VortexShell.sv` + the real `Vortex_axi` RTL alone; drive
+   the flat pins from C++ (DCR-programmed grid launch → busy + AXI activity).
+2. **Co-elaboration** — lint the emitted `Aegis.sv` (with `VortexShell` BlackBox)
+   together with the real Vortex RTL.
+3. **End-to-end** — build AND run the emitted SoC with real Vortex RTL; drive kernels
+   through the SoC's own `vx_dcr_*`/`vx_start` ports, watch `vx_busy` and HBM3 mirror
+   traffic.
+
+Supported config knobs (from real Vortex `VX_config.toml`): XLEN=32, 1 cluster,
+minimal define set (full cflags break Verilator const-folding).
 
 ---
 
-## 8. Phased Implementation Roadmap
-
-### Phase 1: Foundation (Months 1-3)
-- [ ] Clone XiangShan (`kunminghu-v3` branch) and Vortex (`master`)
-- [ ] Set up Mill/SBT build environment
-- [ ] Run XiangShan `make verilog` to generate baseline
-- [ ] Set up Vortex `configure && make` for software simulation
-- [ ] Implement AXI4 ↔ TileLink bridge
-- [ ] Integrate difftest for co-simulation
-
-### Phase 2: CPU Subsystem (Months 2-5)
-- [ ] Configure multi-core XiangShan (4 cores)
-- [ ] Tune L1/L2 cache parameters via XSCache generators
-- [ ] Implement L3 V-Cache controller
-- [ ] Verify RVA23 compliance (AIA, hypervisor, IOMMU)
-- [ ] Integrate yunsuan vector unit
-- [ ] Run SPEC CPU2006 benchmarks
-
-### Phase 3: GPU Subsystem (Months 4-8)
-- [ ] Scale Vortex to 64+ cores via `VX_config.toml`
-- [ ] Enable extended register support in Muon core
-- [ ] Implement WGMMA tensor cores
-- [ ] Integrate graphics pipeline (rasterizer, TMU, ROP)
-- [ ] Write Mesa driver with vortexpipe
-- [ ] Run OpenCL/Vulkan conformance tests
-
-### Phase 4: Fixed-Function + Memory (Months 6-10)
-- [ ] Implement RayFlex Chisel generator
-- [ ] Implement OpenGeMM systolic array generator
-- [ ] Design split-prioritizer with AXI4 QoS
-- [ ] Integrate HBM3 controller interface
-- [ ] Run FOSS neural upscaling (FSR-compatible)
-
-### Phase 5: Software + System (Months 8-12)
-- [ ] Integrate FEX-Emu for x86 binary translation
-- [ ] Integrate DXVK for DirectX → Vulkan
-- [ ] Integrate VOLT LLVM SPIR-V compiler
-- [ ] Port Linux kernel + ML4W (Wayland/Hyprland)
-- [ ] End-to-end demo: AAA game via FEX → DXVK → Vortex
-
----
-
-## 9. Verification Strategy
+## 8. Verification strategy
 
 | Level | Tool | Scope |
 |-------|------|-------|
-| Unit | ChiselTest, Verilator | Pipeline stages, cache controllers |
-| Integration | difftest | CPU-GPU co-simulation |
-| ISA | riscv-dv, RISCOF | RVA23 compliance |
-| GPU | Vortex CI test suites | OpenCL, Vulkan, Tensor |
-| Performance | Trace-driven RTL | SPEC, gaming FPS |
-| Power | FIRRTL transform analysis | Clock gating, DVFS |
+| Unit | ChiselSim | pipeline, caches, bridges, split-prioritizer, HBM3 stack |
+| Elaboration | CIRCT emit | BlackBox presence/absence, port shapes |
+| Integration | ChiselSim | CPU+GPU+fixed-func sharing one stack E2E |
+| Co-sim | Verilator | real Vortex RTL inside the emitted SoC top |
 
 ---
 
-## 10. Open Source Dependencies
+## 9. Roadmap (current + next)
+
+### Done
+- [x] Banked, self-serving HBM3 stack with open-page controller
+- [x] Split-prioritizer with CPU/GPU/ACC QoS arbitration
+- [x] RV32I boot core with shared-memory path (CoreMemToHBM)
+- [x] SIMT on-die kernel core through GPU lane
+- [x] GEMM on a third shared-memory port
+- [x] Bootable `Top` + split multi-file SystemVerilog emission
+- [x] Real Vortex RTL as BlackBox; standalone + co-elab + end-to-end Verilator smoke
+- [x] Default raw-Verilator harness (Makefile.test) green
+- [x] AXI response-ID echo fix (`AXIToMemReq` returns `RID = ARID`), unblocking
+      dcache fills so the co-sim'd Vortex kernel completes and writes back
+- [x] Real Vortex SIMT kernel writing results, verified at the HBM3 mirror address
+      (hand-assembled `lui/addi/sw/wsync/tmc` kernel stored at VMA 0x100, `0xa5a5`
+      store read back through the gpu lane from 0x10000)
+- [x] VCD waveform capture of the end-to-end co-sim for bring-up analysis
+- [x] CPU shared-memory round-trip through the CPU port: hand-assembled RV32I program
+      (`lui/lw/lui/addi/sw/add/halt`) loaded via the boot port, `lw` reads the HBM3
+      cell seeded by the GPU lane (0x10000, `0x12345678`), `sw` writes 0x10040, and
+      both registers and the mirror confirm read/write — core's lui→lw→sw→copy
+      path verified end-to-end
+- [x] CPU loop/branch program on the shared stack: a hand-assembled RV32I loop
+      (`lui/addi/xor/lw/add/bne/sw/halt`) sums a 4-word vector seeded in shared
+      HBM3 (10+20+30+40), branching back on `bne` until the count hits 0, and
+      stores `sum=100` at 0x10040 — verified in registers and at the mirror
+- [x] Real Vortex GPGPU runs a bare-metal Rust raytracer kernel (sphere tracing,
+      fresnel-mirror shading, solid-floor plane) loaded as flat firmware into
+      shared HBM3, writes the framebuffer, and the CPU loop reads it back over
+      the CPU memory port for direct comparison against a double-precision golden
+      — 1600-pixel 40x40 frame verified under Verilator co-simulation
+- [x] AXI WSTRB read-modify-write fix in `AXIToMemReq` (partial stores on the
+      512-bit bus would clobber unwritten lanes; 10-state FSM performs a
+      read-for-ownership + merge before commit)
+- [x] Rust raytracer kernel + host-side golden generator + Python high-res renderer
+      share the same scene description (three coloured glass spheres, ground plane,
+      sky gradient); PNG output at 600x600 with supersampled antialiasing
+
+---
+
+## 10. Open source references
 
 | Component | License | URL |
 |-----------|---------|-----|
 | Chisel / FIRRTL | Apache 2.0 | https://github.com/chipsalliance/chisel |
-| XiangShan | Mulan PSL v2 | https://github.com/OpenXiangShan/XiangShan |
+| NutShell | Mulan PSL v2 | https://github.com/OSCPU/NutShell |
 | Vortex | Apache 2.0 | https://github.com/vortexgpgpu/vortex |
-| Rocket Chip | BSD | https://github.com/chipsalliance/rocket-chip |
-| OpenGeMM | GPL v3 | https://arxiv.org/html/2411.09543v2 |
-| RayFlex | GPL v3 | https://arxiv.org/pdf/2409.06000 |
-| TinyBVH | MIT | https://github.com/jbikker/tinybvh |
-| FEX-Emu | MIT | https://github.com/FEX-Emu/FEX |
-| DXVK | zlib | https://github.com/doitsujin/dxvk |
+| Verilator | LGPL 3.0 / Artistic | https://github.com/verilator/verilator |
 
 ---
 
-## 11. Resource Estimation
+## 11. Resource notes
 
-| Component | Area (est.) | Power (est.) | Process |
-|-----------|-------------|--------------|---------|
-| XiangShan 4-core | 8-12 mm² | 15-25W | 3nm |
-| Vortex 64-core | 40-60 mm² | 40-60W | 5nm |
-| Fixed-function co-die | 15-25 mm² | 10-15W | 5nm |
-| HBM3 PHY + controller | 10-15 mm² | 5-10W | 5nm |
-| **Total SoC** | **~100 mm²** | **~115W TDP** | 3DHI |
+The whole project is tuned for a **14GB / 12-core laptop**:
+
+- Full `--cc` build of `Aegis` + real Vortex RTL: 230 modules, ~45 C++ files;
+  peak ~530MB Verilator, built with `-j2` to stay gentle on RAM.
+- sbt full suite: 25 suites / 50 tests, ~5 minutes.
+- 512-bit AXI signals are `VlWide<16>` in Verilator testbenches.
