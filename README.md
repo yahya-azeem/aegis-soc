@@ -306,6 +306,23 @@ make raytrace         # render the host reference scene to docs/raytrace.png
 make run-raytrace     # run the pre-built co-sim (no compilation)
 ```
 
+### Host reference renderer (chess scene)
+
+`test/vortex/chess.py` is a higher-resolution Whitted raytracer (checkerboard plane, spheres,
+capped cylinders, boxes; hard shadows, specular highlights, reflection bounces, supersampling)
+that renders a chess board with a full set of stylised pieces. It is **host-side Python**
+(multiprocess) and independent of the RTL kernel — useful as a hero image and as a scene reference
+if the GPU kernel is later extended to a chess scene.
+
+```bash
+make chess            # 1000x750, 2x supersampled -> docs/raytrace_chess.png (~2 min)
+CHESS_W=1600 CHESS_H=1200 CHESS_SS=2 make chess
+```
+
+<p align="center">
+  <img src="docs/raytrace_chess.png" alt="host-side chess raytrace" width="720"/>
+</p>
+
 ---
 
 ## Verification
@@ -422,6 +439,7 @@ make verilog-yosys   # Yosys-friendly emission for gate-level analysis
 make test            # ScalaTest suite (13 suites / 27 tests)
 make verilator       # raw-Verilator smoke harness
 make raytrace        # render the raytracer reference scene to docs/raytrace.png
+make chess           # host-side high-res chess render to docs/raytrace_chess.png
 make transistors     # transistor-level CMOS views + counts + SPICE netlist
 make demo-build      # one-time Verilator build of the co-simulation
 make run-raytrace    # run the pre-built raytracer binary (no compilation)

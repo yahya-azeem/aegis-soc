@@ -2,7 +2,7 @@ SHELL := /bin/bash
 SBT   ?= sbt
 SBT_RUN = printf '$(1)\nexit\n' | $(SBT)
 
-.PHONY: compile verilog verilog-vortex verilog-yosys test verilator raytrace transistors demo-build run-raytrace live demo-raytrace clean bsp idea help
+.PHONY: compile verilog verilog-vortex verilog-yosys test verilator raytrace chess transistors demo-build run-raytrace live demo-raytrace clean bsp idea help
 
 compile:
 	@$(call SBT_RUN,compile)
@@ -42,6 +42,10 @@ verilator: verilog
 raytrace:
 	RT_W=600 RT_H=600 RT_OUT=build/raytrace_golden.bin RT_PNG=docs/raytrace.png python3 test/vortex/golden.py
 
+# Host-side high-resolution chess reference render (not the RTL kernel).
+chess:
+	CHESS_W=$${CHESS_W:-1000} CHESS_H=$${CHESS_H:-750} CHESS_SS=$${CHESS_SS:-2} python3 test/vortex/chess.py docs/raytrace_chess.png
+
 # Transistor-level CMOS views: cell library figure, per-block counts, SPICE.
 transistors:
 	bash scripts/transistor_flow.sh
@@ -79,6 +83,7 @@ help:
 	@echo "  test           - Run the sbt/ScalaTest suite"
 	@echo "  verilator      - Run the raw-Verilator smoke harness"
 	@echo "  raytrace       - Render the raytracer reference scene to docs/raytrace.png"
+	@echo "  chess          - Host-side high-res chess reference render"
 	@echo "  transistors    - Transistor-level CMOS views + counts + SPICE netlist"
 	@echo "  demo-build     - One-time Verilator build of the co-simulation"
 	@echo "  run-raytrace   - Run the pre-built raytracer binary (no compilation)"
