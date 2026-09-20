@@ -59,6 +59,9 @@ class HBM3Stack(
   val rData = Reg(UInt(dataWidth.W))
   val rW    = Reg(Bool())
 
+  // linear address -> {bank,row,column}. Only the low 13 address bits are
+  // decoded (6 line-offset + 3 col + 2 bank + 3 row), so the 16KB model aliases
+  // addresses modulo 16KB -- callers place data within distinct low offsets.
   val rLine = rAddr >> offBits
   val rCol  = rLine(bob - 1, 0)
   val rBank = rLine(bob + bankBits - 1, bob)

@@ -4,12 +4,31 @@ import chisel3._
 import chisel3.util._
 import aegis._
 
+/** Memory-QoS policy selected on the `mode` pin. */
 object SplitMode {
+  /** Fair round-robin across the CPU, GPU and accelerator ports. */
   val mode = 0
+  /** Latency-sensitive: the CPU gets strict priority over the GPU/accelerator. */
   val gaming = 1
+  /** CPU priority plus the HBM3 open-page (row-buffer) policy. */
   val ai = 2
 }
 
+/**
+ * Arbitration front-end for the single shared HBM3 stack.
+ *
+ * One [[HBM3Stack]] backs three requesters: the CPU lane, the GPU lane and the
+ * fixed-function / accelerator lane. The policy depends on `io.mode`:
+ *
+ *   - `mode` (0): fair round-robin across all three ports.
+ *   - `gaming` (1): the CPU wins whenever it requests; GPU and accelerator
+ *     round-robin the remaining cycles.
+ *   - `ai` (2): CPU priority as in `gaming`, and the stack keeps DRAM pages
+ *     open to maximise row-buffer hits.
+ *
+ * Responses are tagged with the requester that was granted, so data always
+ * returns on the port that issued the request.
+ */
 class SplitPrioritizer(implicit config: AegisConfig) extends Module {
   val io = IO(new Bundle {
     val soc = new MemPort
@@ -22,22 +41,30 @@ class SplitPrioritizer(implicit config: AegisConfig) extends Module {
   io.mem_axi <> hbm.io.mem
   io.pg_active := hbm.io.pg_active
 
-  val cpu_priority = io.mode === SplitMode.gaming.U
+  val cpu_priority = (io.mode === SplitMode.gaming.U) || (io.mode === SplitMode.ai.U)
   hbm.io.open_page := io.mode === SplitMode.ai.U
-
-  val rr = RegInit(false.B)
 
   val cpu_avail = io.soc.cpu_req.valid
   val gpu_avail = io.soc.gpu_req.valid
   val acc_avail = io.soc.acc_req.valid
+  val any = cpu_avail || gpu_avail || acc_avail
 
-  // CPU always has priority; GPU and accelerator share the remaining
-  // bandwidth round-robin so neither stalls the memory stack.
-  val serve_cpu = cpu_avail && (!(gpu_avail || acc_avail) || cpu_priority || !rr)
-  val serve_gpu = gpu_avail && !serve_cpu
-  val serve_acc = acc_avail && !serve_cpu && !serve_gpu
+  // Rotating-priority round-robin: `rr` holds the port served last, so the
+  // next grant goes to the first requester after it (wrapping around).
+  val rr = RegInit(0.U(2.W))
+  val reqs = VecInit(cpu_avail, gpu_avail, acc_avail)
+  val higher = VecInit((0 until 3).map(i => reqs(i) && (i.U > rr)))
+  val lower = VecInit((0 until 3).map(i => reqs(i) && (i.U <= rr)))
+  val fairSel = Mux(higher.asUInt.orR, PriorityEncoder(higher), PriorityEncoder(lower))
 
-  hbm.io.req.valid := serve_cpu || serve_gpu || serve_acc
+  // In the CPU-priority modes the CPU is granted unconditionally when present.
+  val sel = Mux(cpu_priority && cpu_avail, 0.U, fairSel)
+
+  val serve_cpu = any && (sel === 0.U)
+  val serve_gpu = any && (sel === 1.U)
+  val serve_acc = any && (sel === 2.U)
+
+  hbm.io.req.valid := any
   hbm.io.req.bits.addr := MuxCase(0.U, Seq(
     serve_cpu -> io.soc.cpu_req.bits.addr,
     serve_gpu -> io.soc.gpu_req.bits.addr,
@@ -61,7 +88,7 @@ class SplitPrioritizer(implicit config: AegisConfig) extends Module {
   when(hbm.io.req.fire) {
     src_cpu := serve_cpu
     src_gpu := serve_gpu
-    rr := serve_gpu
+    rr := sel
   }
 
   io.soc.cpu_resp.valid := hbm.io.resp.valid && src_cpu

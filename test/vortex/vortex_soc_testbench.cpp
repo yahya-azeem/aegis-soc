@@ -288,6 +288,7 @@ static bool run_raytracer_phase(VAegis& top) {
 
     size_t exact = 0, within = 0, worst = 0, worst_i = 0;
     uint64_t sum_err = 0;
+    std::vector<uint8_t> got_fb(fb_size, 0);
     for (size_t off = 0; off < fb_size; off += 64) {
         uint32_t line[16] = {0};
         mem_read_line(top, fb_base + off, line);
@@ -296,6 +297,7 @@ static bool run_raytracer_phase(VAegis& top) {
         for (size_t w = 0; w < nwords; w++) {
             uint32_t got = line[w];
             size_t b0 = off + 4 * w;
+            for (int b = 0; b < 4; b++) got_fb[b0 + b] = uint8_t((got >> (8 * b)) & 0xFF);
             uint32_t exp = (uint32_t(golden[b0]) << 0) | (uint32_t(golden[b0 + 1]) << 8) |
                            (uint32_t(golden[b0 + 2]) << 16) | (uint32_t(golden[b0 + 3]) << 24);
             if (got == exp) exact++;
@@ -315,6 +317,13 @@ static bool run_raytracer_phase(VAegis& top) {
     }
     size_t npix = fb_size / 4;
     bool rt_ok = (within == npix);
+    if (const char* dump = std::getenv("AEGIS_VX_RT_DUMP")) {
+        std::ofstream ofs(dump, std::ios::binary);
+        if (ofs.good()) {
+            ofs.write(reinterpret_cast<const char*>(got_fb.data()), got_fb.size());
+            std::cout << "rt framebuffer dumped to " << dump << "\n";
+        }
+    }
     std::cout << "rt framebuffer: " << npix << " pixels, exact=" << exact
               << ", within tol(4)=" << within << ", worst_ch_delta=" << worst << " @px " << worst_i
               << ", mean_ch_err=" << (sum_err / double(npix * 3))

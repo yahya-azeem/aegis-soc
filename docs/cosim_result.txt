@@ -1,0 +1,6 @@
+golden framebuffer: 6400 bytes (1600 pixels) -> rt_balls_golden.bin
+PASS: Aegis + real Vortex RTL end-to-end, kernel ran from shared HBM3, CPU loop summed shared HBM3
+PASS: Aegis + real Vortex RTL end-to-end, kernel ran from shared HBM3, CPU loop summed shared HBM3, raytracer framebuffer verified vs golden
+PASS: VortexShell smoke OK
+rt framebuffer: 1600 pixels, exact=1595, within tol(4)=1600, worst_ch_delta=1 @px 10, mean_ch_err=0.00125 -> PASS
+vx_busy: yes busy_dropped: yes read_req: yes write_req: yes mirror_magic: yes shared_mem_store: yes

@@ -1,0 +1,50 @@
+// Aegis SoC block diagram. The block set is taken directly from the emitted
+// build/rtl/Aegis.sv module instances.
+digraph Aegis {
+  graph [fontname="Helvetica", rankdir=LR, bgcolor="white", pad=0.35,
+         nodesep=0.45, ranksep=0.75, labelloc="t",
+         label="Aegis SoC — unified shared-memory RISC-V SoC (Chisel)", fontsize=18, fontcolor="#0f172a"];
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        fillcolor="#eef2ff", color="#6366f1", penwidth=1.4, fontcolor="#0f172a"];
+  edge [fontname="Helvetica", fontsize=9, color="#64748b", fontcolor="#475569"];
+
+  subgraph cluster_cpu {
+    label="CPU lane"; fontname="Helvetica-Bold"; fontsize=12; color="#94a3b8"; style="rounded";
+    riscv [label="RiscVICore\nRV32I in-order boot core"];
+    cmem  [label="CoreMemToHBM\n32b word → 512b line RMW"];
+    riscv -> cmem;
+  }
+
+  subgraph cluster_gpu {
+    label="GPU lane"; fontname="Helvetica-Bold"; fontsize=12; color="#94a3b8"; style="rounded";
+    ext  [label="external cluster port\n(gpu)", style="rounded,filled,dashed", fillcolor="#f8fafc", color="#94a3b8"];
+    simt [label="SimtCore\n32 lanes, Y = X + Z"];
+    l2   [label="GPUL2Cache\n2-port round-robin + AXI4 FSM"];
+    gaxi [label="AXIToMemReq\nAXI4 slave → MemReq\n(WSTRB read-modify-write)"];
+    simt -> l2; ext -> l2; l2 -> gaxi;
+  }
+
+  subgraph cluster_acc {
+    label="Accelerator lane"; fontname="Helvetica-Bold"; fontsize=12; color="#94a3b8"; style="rounded";
+    gemm [label="GemmToMem\n8×8 systolic MAC from shared mem"];
+    vx   [label="VortexAccelerator\nreal Vortex_axi BlackBox\n(when config.vortexRtl)", style="rounded,filled,dashed", fillcolor="#f8fafc", color="#94a3b8"];
+  }
+
+  split [label="SplitPrioritizer\nCPU/GPU/ACC QoS arbiter\nround-robin + open-page policy",
+         fillcolor="#fef3c7", color="#f59e0b", penwidth=2];
+  hbm   [label="HBM3Stack\n4 banks × 8 rows × 8 cols × 512-bit\nopen-page controller + refresh",
+         fillcolor="#dcfce7", color="#22c55e", penwidth=2];
+  phy   [label="mem_axi\nHBM3 PHY observability mirror",
+         style="rounded,filled,dashed", fillcolor="#f1f5f9", color="#94a3b8"];
+  mode  [label="mode[1:0]\nunified / gaming / ai", shape=note, fillcolor="#fef9c3", color="#eab308"];
+
+  cmem  -> split [label="cpu_req / cpu_resp"];
+  gaxi  -> split [label="gpu_req / gpu_resp"];
+  gemm  -> split [label="acc_req / acc_resp"];
+  vx    -> split [style=dashed, label="acc_req / acc_resp"];
+  split -> hbm   [label="MemReq / 512-bit data", penwidth=1.8];
+  hbm   -> phy   [style=dashed];
+  mode  -> split [style=dashed];
+
+  { rank=same; split; hbm; phy; }
+}

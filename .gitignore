@@ -13,7 +13,6 @@ __pycache__/
 .idea/
 *.swp
 *.swo
-mill
 
 # Large build artifacts
 *.lib
@@ -32,3 +31,6 @@ project/target/
 project/project/
 .bsp/
 .opencode/
+
+# Yosys
+abc.history

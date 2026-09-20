@@ -114,9 +114,32 @@ def main():
             px = (clamp8(acc[0]) << 16) | (clamp8(acc[1]) << 8) | clamp8(acc[2])
             fb += px.to_bytes(4, "little")
 
-    with open("rt_balls_golden.bin", "wb") as f:
+    out = os.environ.get("RT_OUT", "rt_balls_golden.bin")
+    with open(out, "wb") as f:
         f.write(fb)
-    print(f"golden framebuffer: {len(fb)} bytes ({len(fb) // 4} pixels)")
+    print(f"golden framebuffer: {len(fb)} bytes ({len(fb) // 4} pixels) -> {out}")
+
+    png = os.environ.get("RT_PNG")
+    if png:
+        _write_png(fb, png)
+
+
+def _write_png(fb, path):
+    """Upscale the raw 0x00RRGGBB framebuffer to a viewable PNG."""
+    from PIL import Image
+
+    img = Image.new("RGB", (W, H))
+    img.putdata([
+        ((fb[i] | (fb[i + 1] << 8) | (fb[i + 2] << 16) | (fb[i + 3] << 24)) >> 16 & 0xFF,
+         (fb[i] | (fb[i + 1] << 8) | (fb[i + 2] << 16) | (fb[i + 3] << 24)) >> 8 & 0xFF,
+         (fb[i] | (fb[i + 1] << 8) | (fb[i + 2] << 16) | (fb[i + 3] << 24)) & 0xFF)
+        for i in range(0, len(fb), 4)
+    ])
+    scale = max(1, 600 // max(W, H))
+    img = img.resize((W * scale, H * scale), Image.NEAREST)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    img.save(path)
+    print(f"raytracer PNG ({img.width}x{img.height}, {scale}x nearest) -> {path}")
 
 
 if __name__ == "__main__":

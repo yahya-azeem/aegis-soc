@@ -57,16 +57,16 @@ const H: usize = match option_env!("RT_H") {
 };
 const MAX_DEPTH: i32 = 2; // reflection bounces (0 reports pixels as-viewed)
 
-// Address map (shared memory): kernel image is loaded at VMA 0x100 and the
-// starup PC is 0x100. The reading stack sits at 0x8000 (clear of the image)
-// and the framebuffer is at 0x10000 -- the verified GPU->shared-HBM3 target.
-// Shared-memory layout (16KB HBM3 model folds addresses via addr[13:6], so the
-// regions MUST be rIdx-disjoint from the code image at 0x100..0xA78):
-//   - framebuffer base: 0x2000  (up to 100 lines for 40x40)
-//   - reading stack:    top at 0x3C00
-// Address map (shared memory): kernel image is loaded at VMA 0x100 and the
-// startup PC is 0x100. The framebuffer and reading stack live below 0x4000 as
-// disjoint regions of the 16KB HBM3 model (see FRAME_BASE / entry asm).
+// Shared-memory layout. The kernel image is loaded at VMA 0x100 and the
+// startup PC is 0x100; the testbench launches it at 0x100.
+//
+//   - kernel image:    0x100 .. ~0xA78
+//   - framebuffer:     0x2000 (FRAME_BASE, up to 100 lines for a 40x40 frame)
+//   - reading stack:   top at 0x3C00
+//
+// The 16KB HBM3 model decodes only addr[13:6], so the code, framebuffer and
+// stack regions must occupy disjoint line indices; the addresses above map to
+// lines 4..41, 128..227 and 240 respectively.
 const FRAME_BASE: *mut u32 = 0x2000 as *mut u32;
 
 const EYE_X: f32 = 0.0;
@@ -117,9 +117,6 @@ const S2_RF: f32 = 0.25;
 //   tmc x0   : deactivate all lanes
 //   wsync    : wait for memory ops in flight before retiring
 // ---------------------------------------------------------------------------
-// The testbench co-sim showed `wsync` stalling forever under heavy store
-// traffic; RT_NOWSYNC=1 emits a wsync-free tail (retire on `tmc` alone) and
-// the host flushes the cache via the cache-flush DCR read instead.
 // The testbench co-sim showed `wsync` stalling forever under heavy store
 // traffic; building with `--cfg RT_NOWSYNC` emits a wsync-free tail (retire
 // on `tmc` alone) and the host flushes the cache via the cache-flush DCR read.

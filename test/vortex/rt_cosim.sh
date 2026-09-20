@@ -23,7 +23,7 @@ make -C build/vortex-smoke/obj_dir-soc -j2 -f VAegis.mk 2>&1 | tail -4
 echo "== run end-to-end with raytracer phase =="
 AEGIS_VX_RAYTRACE=1 \
 AEGIS_VX_RT_W="$RT_W" AEGIS_VX_RT_H="$RT_H" \
-AEGIS_VX_RT_BIN="/home/yahya/Projects/aegis-soc/test/vortex/rt_balls.bin" \
-AEGIS_VX_RT_GOLDEN="/home/yahya/Projects/aegis-soc/test/vortex/rt_balls_golden.bin" \
+AEGIS_VX_RT_BIN="$REPO/test/vortex/rt_balls.bin" \
+AEGIS_VX_RT_GOLDEN="$REPO/test/vortex/rt_balls_golden.bin" \
 AEGIS_VX_RT_TIMEOUT=100000000 \
 build/vortex-smoke/obj_dir-soc/VAegis

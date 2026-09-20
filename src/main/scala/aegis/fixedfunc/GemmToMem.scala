@@ -7,16 +7,15 @@ import aegis._
 /**
  * Fixed-function GEMM engine that operates out of the SHARED HBM3.
  *
- * Unlike the register-fed SystolicArray (loaded through its own command
- * channel), this engine reads its operand tiles from shared memory, computes a
- * real matrix product on a systolic-style datapath, and writes the result tile
- * back to shared memory -- so the CPU/GPU can seed it with data placed by any
- * other agent on the SoC.
+ * The engine reads its operand tiles from the shared stack, computes a real
+ * matrix product on a systolic-style datapath, and writes the result tile back
+ * to shared memory -- so the CPU/GPU can seed it with data placed by any other
+ * agent on the SoC.
  *
  * Addressing (tile = T, 512-bit lines, 32x 16-bit elements per line):
  *   - A tile: T x T 16-bit elements, flattened row-major, at baseAddr
- *   - B tile: T x T 16-bit elements, flattened row-major, at baseAddr + T*T/2 B
- *   - C tile: T x T 32-bit results,   flattened row-major, at baseAddr + T*T B
+ *   - B tile: T x T 16-bit elements, flattened row-major, at baseAddr + T*T*2 B
+ *   - C tile: T x T 32-bit results,   flattened row-major, at baseAddr + T*T*4 B
  *
  * A START command with the base address in `data` runs the whole pipeline.
  */

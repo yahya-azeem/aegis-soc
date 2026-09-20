@@ -87,7 +87,7 @@ if [ -f "${OUT}/emit/Aegis.sv" ]; then
     echo "== scope: Aegis(top) + real Vortex RTL end-to-end build =="
     EMIT="${OUT}/emit"
     verilator --cc --top-module Aegis \
-        --language 1800-2012 --assert -Wno-fatal -Wno-DECLFILENAME -Wno-REDEFMACRO \
+        --language 1800-2012 --assert --trace -Wno-fatal -Wno-DECLFILENAME -Wno-REDEFMACRO \
         --x-initial unique --x-assign unique --threads 1 \
         --Mdir "${OUT}/obj_dir-soc" \
         -DVX_CFG_XLEN=32 -DVX_CFG_XLEN_32 -DVX_CFG_FLEN=32 \

@@ -12,8 +12,13 @@ object EmitSupport {
   private val Delim = "// ----- 8< ----- FILE \""
   private val Marker = "(?m)^// ----- 8< ----- FILE \"([^\"]+)\" ----- 8< -----\\s*$".r
 
-  def emitAndSplitAndWritePrimary(gen: => chisel3.Module, outDir: String, primaryName: String): Unit = {
-    val verilog = ChiselStage.emitSystemVerilog(gen)
+  def emitAndSplitAndWritePrimary(
+      gen: => chisel3.Module,
+      outDir: String,
+      primaryName: String,
+      firtoolOpts: Array[String] = Array.empty,
+  ): Unit = {
+    val verilog = ChiselStage.emitSystemVerilog(gen, firtoolOpts = firtoolOpts)
     val dir = new java.io.File(outDir)
     dir.mkdirs()
 
@@ -50,10 +55,10 @@ object EmitSupport {
 object TopElaborate extends App {
   implicit val config: AegisConfig = AegisConfig()
   println(s"=== ${config.socName} SoC ===")
-  println(s"CPU: ${config.cpu.nCores}x XiangShan KMV3 @ ${config.cpu.freqMHz}MHz, L3 ${config.cpu.l3CacheSizeMB}MB V-Cache")
-  println(s"GPU: ${config.gpu.nClusters}x Vortex clusters, ${config.gpu.nCores} SIMT cores @ ${config.gpu.freqMHz}MHz")
-  println(s"Mem: ${config.mem.totalSizeGB}GB HBM3 @ ${config.mem.hbmFreqGbps}Gbps")
-  println(s"Fixed: RT=${config.fixedFunc.rayTracing}, AI=${config.fixedFunc.aiUpscaling}")
+  println("CPU: 1x RV32I in-order boot core -> 512-bit shared-memory adapter")
+  println("GPU: 2-port L2 front-end (external cluster + 32-lane on-die SIMT core)")
+  println("Mem: 16KB banked HBM3 model (4 banks x 8 rows x 8 cols x 512-bit), open-page + refresh")
+  println("Acc: fixed-function GEMM (tile 8)")
   println()
 
   EmitSupport.emitAndSplitAndWritePrimary(new Top()(config), "build/rtl", "Aegis.sv")
@@ -63,8 +68,21 @@ object TopElaborate extends App {
 /** Same SoC with the real Vortex RTL black-boxed on the acc port, emitted for
   * the out-of-tree raw-verilator co-sim flow in test/vortex. */
 object TopVortexElaborate extends App {
-  implicit val config: AegisConfig = AegisConfig(gpu = AegisConfig().gpu.copy(vortexRtl = true))
+  implicit val config: AegisConfig = AegisConfig(vortexRtl = true)
   println(s"=== ${config.socName} SoC (real Vortex RTL on acc port) ===")
   EmitSupport.emitAndSplitAndWritePrimary(new Top()(config), "build/vortex-smoke/emit", "Aegis.sv")
   println("Generated Verilog in build/vortex-smoke/emit/")
+}
+
+/** Emit the SoC in a form the Yosys Verilog frontend can parse: firtool's
+  * `disallowLocalVariables` (no `$unnamed_block` accesses) and
+  * `disallowPackedArrays` (no packed multi-dimensional arrays). This is only
+  * used for the gate-level/statistics views; the simulation flow uses the
+  * default emission above. */
+object TopYosysElaborate extends App {
+  implicit val config: AegisConfig = AegisConfig()
+  val firtoolOpts = Array("--lowering-options=disallowLocalVariables,disallowPackedArrays")
+  println(s"=== ${config.socName} SoC (Yosys-friendly emission) ===")
+  EmitSupport.emitAndSplitAndWritePrimary(new Top()(config), "build/rtl-yosys", "Aegis.sv", firtoolOpts)
+  println("Generated Yosys-friendly Verilog in build/rtl-yosys/")
 }

@@ -1,4 +1,3 @@
-TOP ?= aegis.Top
 BUILD_DIR ?= ../build
 
 .PHONY: test verilog check

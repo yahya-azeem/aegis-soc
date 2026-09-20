@@ -13,7 +13,7 @@ class VortexBlackBoxEmitTest extends AnyFlatSpec {
   behavior of "VortexAxiBlackBox emission"
 
   it should "instantiate the flat VortexShell wrapper with the real AXI pins when vortexRtl is on" in {
-    val vxConfig = AegisConfig(gpu = AegisConfig().gpu.copy(vortexRtl = true))
+    val vxConfig = AegisConfig(vortexRtl = true)
     val verilog = ChiselStage.emitSystemVerilog(new Top()(vxConfig))
     assert(verilog.contains("VortexShell vx ("), "expected a VortexShell BlackBox instantiation")
     assert(verilog.contains("m_axi_awaddr"), "expected AXI write-address pin")

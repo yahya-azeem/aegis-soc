@@ -76,6 +76,7 @@ val hex = "CAFEBABE_CAFEBABE_CAFEBABE_CAFEBABE_DEADBEEF_DEADBEEF_DEADBEEF_DEADBE
       dut.io.AWADDR.poke("h40".U)
       dut.io.AWVALID.poke(true.B)
       dut.io.WDATA.poke(("h" + hex).U(512.W))
+      dut.io.WSTRB.poke("hFFFFFFFFFFFFFFFF".U(64.W)) // full-line store (all 64 byte lanes)
       dut.io.WVALID.poke(true.B)
       dut.io.BREADY.poke(true.B)
       dut.io.RREADY.poke(true.B)

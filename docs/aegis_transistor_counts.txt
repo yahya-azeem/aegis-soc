@@ -1,0 +1,14 @@
+Aegis SoC - structural CMOS transistor counts (Yosys 0.66 + techlib/cmos.v)
+(combinational cells are exact CMOS networks; registers are the 14T
+transmission-gate master-slave DFF plus enable/reset steering muxes)
+
+block                    nmos         pmos        total
+SplitPrioritizer         6435         6435        12870
+CoreMemToHBM           21596        21596        43192
+AXIToMemReq             9259         9259        18518
+GPUL2Cache             16063        16063        32126
+SimtCore               33974        33974        67948
+GemmToMem             102351       102351       204702
+RiscVICore            182504       182504       365008
+HBM3Stack            2361674      2361674      4723348
+TOTAL                                             5467712

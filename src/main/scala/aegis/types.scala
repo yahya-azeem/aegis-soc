@@ -3,6 +3,7 @@ package aegis
 import chisel3._
 import chisel3.util._
 
+/** Full AXI4 master bundle used between the SoC blocks and the HBM3 stack. */
 class AXIBundle(val addrWidth: Int, val dataWidth: Int) extends Bundle {
   val AWID = Output(UInt(8.W))
   val AWADDR = Output(UInt(addrWidth.W))
@@ -35,20 +36,13 @@ class AXIBundle(val addrWidth: Int, val dataWidth: Int) extends Bundle {
   val RREADY = Output(Bool())
 }
 
-class TileLinkBundle(val beatBytes: Int) extends Bundle {
-  val a_valid = Output(Bool())
-  val a_ready = Input(Bool())
-  val a_bits = Output(UInt(64.W))
-  val d_valid = Input(Bool())
-  val d_ready = Output(Bool())
-  val d_bits = Input(UInt((beatBytes * 8).W))
-}
-
+/** Optional UART pins exposed on the SoC top for bring-up. */
 class UARTIO extends Bundle {
   val tx = Output(Bool())
   val rx = Input(Bool())
 }
 
+/** 512-bit line request used on the shared-memory fabric. */
 class MemReq extends Bundle {
   val addr = UInt(64.W)
   val data = UInt(512.W)
@@ -69,11 +63,13 @@ class WordMemPort extends Bundle {
   val resp = Flipped(Decoupled(UInt(32.W)))
 }
 
+/** A single 512-bit request/response port into the shared stack. */
 class MemInterface extends Bundle {
   val req = Decoupled(new MemReq)
   val resp = Flipped(Decoupled(UInt(512.W)))
 }
 
+/** The three requester ports presented to the split-prioritizer. */
 class MemPort extends Bundle {
   val cpu_req = Flipped(Decoupled(new MemReq))
   val gpu_req = Flipped(Decoupled(new MemReq))
@@ -81,38 +77,4 @@ class MemPort extends Bundle {
   val cpu_resp = Decoupled(UInt(512.W))
   val gpu_resp = Decoupled(UInt(512.W))
   val acc_resp = Decoupled(UInt(512.W))
-}
-
-class FixedFuncUnit extends Bundle {
-  val cmd = Flipped(Decoupled(new Bundle {
-    val opcode = UInt(8.W)
-    val data = UInt(512.W)
-  }))
-  val resp = Decoupled(new Bundle {
-    val data = UInt(512.W)
-  })
-}
-
-class CPUIO extends Bundle {
-  val ipi = Output(UInt(8.W))
-  val msi = Output(UInt(8.W))
-}
-
-class GPUIO extends Bundle {
-  val irq = Output(Bool())
-}
-
-class L2Interface extends Bundle {
-  val addr = Output(UInt(64.W))
-  val data = Output(UInt(512.W))
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-}
-
-class CrossbarInterface extends Bundle {
-  val addr = Output(UInt(64.W))
-  val data = Output(UInt(512.W))
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val source = Output(UInt(4.W))
 }

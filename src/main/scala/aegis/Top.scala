@@ -49,7 +49,7 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   val gemm_base = IO(Input(UInt(64.W)))
   val gemm_busy = IO(Output(Bool()))
 
-  // Real Vortex GPGPU control (driven only when config.gpu.vortexRtl)
+  // Real Vortex GPGPU control (driven only when config.vortexRtl)
   val vx_dcr_valid = IO(Input(Bool()))
   val vx_dcr_rw = IO(Input(Bool()))
   val vx_dcr_addr = IO(Input(UInt(12.W)))
@@ -123,7 +123,7 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   split.io.soc.gpu_resp <> gpuAdp.io.mem.resp
 
   // ---- Fixed function / accelerator into the shared stack ----
-  // When config.gpu.vortexRtl is set, the real Vortex GPGPU RTL is black-boxed
+  // When config.vortexRtl is set, the real Vortex GPGPU RTL is black-boxed
   // on the acc port (co-simulated out-of-tree with the external SV sources).
   // Otherwise the Chisel GEMM engine occupies the same fabric port.
   vx_dcr_rsp_valid := false.B
@@ -131,7 +131,7 @@ class Top(memMode: Int = 0)(implicit config: AegisConfig) extends Module {
   vx_busy := false.B
   gemm_busy := false.B
 
-  if (config.gpu.vortexRtl) {
+  if (config.vortexRtl) {
     val vx = Module(new VortexAccelerator(32, 512))
     vx.io.dcr.req_valid := vx_dcr_valid
     vx.io.dcr.req_rw := vx_dcr_rw
