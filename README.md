@@ -306,6 +306,25 @@ make raytrace         # render the host reference scene to docs/raytrace.png
 make run-raytrace     # run the pre-built co-sim (no compilation)
 ```
 
+**Chess scene on the same GPU.** `test/vortex/rt_chess.rs` renders a checkerboard plane with
+eight white/black pieces, same camera, lighting, specular and one reflection bounce as the sphere
+kernel. Its host golden is `test/vortex/chess_golden.py`, and it is verified the same way
+(`exact=1597/1600`, all 1600 within tolerance ±4 → **PASS**):
+
+<p align="center">
+  <img src="docs/raytrace_chess_rtl.png" alt="chess rendered by the real Vortex RTL" width="420"/><br/>
+  <em>Chess board and pieces written by the real Vortex GPGPU inside the SoC (40×40, upscaled).</em>
+</p>
+
+```bash
+# rebuild the chess kernel + its golden (one-time; needs the riscv32imafc target)
+RT_SRC=rt_chess.rs RT_NAME=rt_chess RT_W=40 RT_H=40 bash test/vortex/build_rt.sh
+RT_W=40 RT_H=40 RT_OUT=test/vortex/rt_chess_golden.bin python3 test/vortex/chess_golden.py
+
+scripts/run_raytrace.sh --scene chess   # chess, ~4 min, verified (default)
+scripts/run_raytrace.sh --scene balls   # original spheres, ~1m40s
+```
+
 ### Host reference renderer (chess scene)
 
 `test/vortex/chess.py` is a higher-resolution Whitted raytracer (checkerboard plane, spheres,
@@ -485,7 +504,8 @@ picture:
   HBM3, `vx_busy`, and a progress bar — ending with "RENDER COMPLETE (framebuffer verified vs
   golden)".
 - The viewer opens on the **high-resolution chess reference render** (`docs/raytrace_chess.png`,
-  built with `make chess`) as a splash, then switches to the live GPU frames as they arrive.
+  built with `make chess`) as a splash, then switches to the live GPU frames as they arrive. The
+  live scene is **chess** by default (`scripts/run_raytrace.sh --scene balls` for the spheres).
 - The same run captures numbered frames and, with ffmpeg, assembles `docs/raytrace_rtl.mp4`
   (~6 s at 12 fps). It is committed, so you can play it even without running anything.
 
@@ -539,8 +559,8 @@ src/test/scala/aegis/         ChiselSim + emit suites
 test/                         raw-Verilator harness
 test/vortex/                  real-Vortex co-sim, raytracer kernel + golden renderer
 vortex/                       vendored upstream Vortex 3.0 RTL (Apache-2.0)
-docs/                         block diagram, floorplan, raytracer renders + live MP4,
-                              Yosys views, transistor-level cell library + counts
+docs/                         block diagram, floorplan, sphere + chess raytracer renders and
+                              live MP4s, Yosys views, transistor-level cell library + counts
 scripts/                      build_demo.sh, run_raytrace.sh, demo_raytrace.sh, simulate.py,
                               render_floorplan.py, render_yosys_summary.py,
                               render_transistors.py, transistor_flow.sh, cmos_skin.svg

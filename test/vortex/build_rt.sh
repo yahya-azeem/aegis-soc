@@ -11,6 +11,8 @@ cd "$(dirname "$0")"
 
 RT_W="${RT_W:-40}"
 RT_H="${RT_H:-40}"
+SRC="${RT_SRC:-rt_balls.rs}"
+NAME="${RT_NAME:-rt_balls}"
 
 # -zca (no 16-bit/compressed), -a (no atomics), -c legacy alias. The Vortex
 # RTL config this kernel targets has EXT_C_ENABLE=false and EXT_A_ENABLE=false.
@@ -23,9 +25,9 @@ RT_W="$RT_W" RT_H="$RT_H" rustc \
   -C link-arg=-T -C link-arg=rt_balls.ld \
   $CFG_NOWSYNC \
   --edition=2021 \
-  ./rt_balls.rs \
-  -o rt_balls.elf
+  "./$SRC" \
+  -o "$NAME.elf"
 
-llvm-objcopy -O binary rt_balls.elf rt_balls.bin
+llvm-objcopy -O binary "$NAME.elf" "$NAME.bin"
 
-echo "rt_balls.bin: $(stat -c%s rt_balls.bin) bytes (${RT_W}x${RT_H}, fb at 0x2000, stack at 0x3C00)"
+echo "$NAME.bin: $(stat -c%s "$NAME.bin") bytes (${RT_W}x${RT_H}, fb at 0x2000, stack at 0x3C00)"
