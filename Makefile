@@ -2,7 +2,7 @@ SHELL := /bin/bash
 SBT   ?= sbt
 SBT_RUN = printf '$(1)\nexit\n' | $(SBT)
 
-.PHONY: compile verilog verilog-vortex verilog-yosys test verilator raytrace transistors clean bsp idea help
+.PHONY: compile verilog verilog-vortex verilog-yosys test verilator raytrace transistors demo-build run-raytrace demo-raytrace clean bsp idea help
 
 compile:
 	@$(call SBT_RUN,compile)
@@ -46,7 +46,14 @@ raytrace:
 transistors:
 	bash scripts/transistor_flow.sh
 
-# One-command live demo: render the raytracer on the real Vortex RTL.
+# One-command live demo: build once, then render the raytracer on the real RTL.
+demo-build:
+	bash scripts/build_demo.sh
+
+# Run the pre-built binary only (no compilation) -- use this in the interview.
+run-raytrace:
+	bash scripts/run_raytrace.sh
+
 demo-raytrace:
 	bash scripts/demo_raytrace.sh
 
@@ -69,6 +76,8 @@ help:
 	@echo "  verilator      - Run the raw-Verilator smoke harness"
 	@echo "  raytrace       - Render the raytracer reference scene to docs/raytrace.png"
 	@echo "  transistors    - Transistor-level CMOS views + counts + SPICE netlist"
-	@echo "  demo-raytrace  - Live Aegis+Vortex co-sim raytracer render"
+	@echo "  demo-build     - One-time Verilator build of the co-simulation"
+	@echo "  run-raytrace   - Run the pre-built raytracer binary (no compilation)"
+	@echo "  demo-raytrace  - Build if needed, then run the raytracer"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  bsp            - Generate BSP config for IDEs"
