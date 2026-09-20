@@ -3,6 +3,8 @@
 #include <iostream>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
+#include <algorithm>
 #include <fstream>
 #include <vector>
 #include <string>
@@ -10,6 +12,12 @@
 
 static vluint64_t main_time = 0;
 static VerilatedVcdC* g_tfp = nullptr;
+
+// per-transaction logging / progress prints are off unless AEGIS_VX_VERBOSE=1
+static const bool g_verbose = [] {
+    const char* v = std::getenv("AEGIS_VX_VERBOSE");
+    return v && v[0] == '1';
+}();
 
 double sc_time_stamp() {
     return main_time;
@@ -70,13 +78,15 @@ static void drive_soc(VAegis& top) {
 
     if (top.mem_axi_ARVALID) {
         saw_read_req = true;
-        std::cout << "AR: addr=0x" << std::hex << top.mem_axi_ARADDR << std::dec << std::endl;
+        if (g_verbose)
+            std::cout << "AR: addr=0x" << std::hex << top.mem_axi_ARADDR << std::dec << std::endl;
         if (cpu_phase && top.mem_axi_ARADDR == 0x00010000ULL) cpu_saw_rd = true;
     }
     if (top.mem_axi_AWVALID) {
         saw_write_req = true;
-        std::cout << "AW: addr=0x" << std::hex << top.mem_axi_AWADDR
-                  << " data[0]=0x" << top.mem_axi_WDATA[0] << std::dec << std::endl;
+        if (g_verbose)
+            std::cout << "AW: addr=0x" << std::hex << top.mem_axi_AWADDR
+                      << " data[0]=0x" << top.mem_axi_WDATA[0] << std::dec << std::endl;
         if (top.mem_axi_AWADDR == 0x00010000ULL && top.mem_axi_WDATA[0] == 0xa5a5u)
             match_magic_store = true;
         if (cpu_phase && top.mem_axi_AWADDR == 0x00010040ULL) cpu_saw_wr = true;
@@ -214,6 +224,44 @@ static void program_vx_launch(VAegis& top, uint32_t pc) {
     dcr_write(top, 0x023, 1);    // cluster dim Z
 }
 
+// ---- live progressive framebuffer streaming ------------------------------
+// Writes the current framebuffer as a PPM (atomically) so an external viewer
+// can display the image building up while the kernel is still running.
+static void write_ppm_atomic(const std::string& path, const std::vector<uint8_t>& rgb, int w, int h) {
+    std::string tmp = path + ".tmp";
+    std::ofstream f(tmp, std::ios::binary);
+    f << "P6\n" << w << " " << h << "\n255\n";
+    f.write(reinterpret_cast<const char*>(rgb.data()), std::streamsize(rgb.size()));
+    f.close();
+    std::rename(tmp.c_str(), path.c_str());
+}
+
+static void write_status(const std::string& path, uint64_t step_i, unsigned long fb_aw, int busy, int done) {
+    std::ofstream f(path, std::ios::trunc);
+    f << "step=" << step_i << "\nfb_writes=" << fb_aw << "\nbusy=" << busy << "\ndone=" << done << "\n";
+}
+
+static void dump_fb_ppm(VAegis& top, uint64_t fb_base, int w, int h,
+                        const std::string& cur, const std::string& numbered) {
+    const size_t fb_size = size_t(w) * size_t(h) * 4;
+    std::vector<uint8_t> rgb(size_t(w) * size_t(h) * 3, 0);
+    for (size_t off = 0; off < fb_size; off += 64) {
+        uint32_t line[16] = {0};
+        mem_read_line(top, fb_base + off, line);
+        size_t nwords = (fb_size - off) / 4;
+        if (nwords > 16) nwords = 16;
+        for (size_t i = 0; i < nwords; i++) {
+            uint32_t px = line[i]; // 0x00RRGGBB
+            size_t p = off / 4 + i;
+            rgb[p * 3 + 0] = uint8_t((px >> 16) & 0xFF);
+            rgb[p * 3 + 1] = uint8_t((px >> 8) & 0xFF);
+            rgb[p * 3 + 2] = uint8_t(px & 0xFF);
+        }
+    }
+    write_ppm_atomic(cur, rgb, w, h);
+    if (!numbered.empty()) write_ppm_atomic(numbered, rgb, w, h);
+}
+
 // Raytracer phase: seed rt_balls.bin at VMA 0x100, run it on the real Vortex
 // RTL, then read the framebuffer back from 0x10000 and compare with the
 // host-side golden image (per-channel tolerance for float noise).
@@ -228,6 +276,21 @@ static bool run_raytracer_phase(VAegis& top) {
     const vluint64_t timeout = std::getenv("AEGIS_VX_RT_TIMEOUT")
                                    ? std::strtoull(std::getenv("AEGIS_VX_RT_TIMEOUT"), nullptr, 10)
                                    : 4000000ULL;
+
+    // live progressive rendering: set AEGIS_VX_LIVE_DIR to a directory and the
+    // testbench streams the partially-written framebuffer there as PPM frames.
+    const char* live_env = std::getenv("AEGIS_VX_LIVE_DIR");
+    const bool live = live_env && live_env[0];
+    const std::string live_dir = live ? std::string(live_env) : std::string();
+    const vluint64_t live_every = std::getenv("AEGIS_VX_LIVE_EVERY")
+                                      ? std::strtoull(std::getenv("AEGIS_VX_LIVE_EVERY"), nullptr, 10)
+                                      : 100000ULL;
+    long live_seq = 0;
+    if (live) {
+        std::system(("mkdir -p '" + live_dir + "/frames'").c_str());
+        write_status(live_dir + "/status.txt", 0, 0, 0, 0);
+        std::cout << "live streaming frames to " << live_dir << " every " << live_every << " steps\n";
+    }
 
     std::cout << "\n== raytracer phase ==\n";
     std::vector<uint8_t> bin;
@@ -254,6 +317,7 @@ static bool run_raytracer_phase(VAegis& top) {
     tick_raw(top);
 
     bool saw_busy = false, busy_dropped = false, was_busy = false;
+    vluint64_t rt_steps = 0;
     uint64_t fb_aw = 0; // DRAM writes landing in the framebuffer range = pixels stored
     const uint64_t fb_lo = 0x00002000ULL, fb_hi = fb_lo + uint64_t(rt_w) * rt_h * 4;
     for (vluint64_t i = 0; i < timeout; i++) {
@@ -261,8 +325,14 @@ static bool run_raytracer_phase(VAegis& top) {
         if (top.mem_axi_AWVALID && (uint64_t)top.mem_axi_AWADDR >= fb_lo && (uint64_t)top.mem_axi_AWADDR < fb_hi)
             fb_aw++;
         if (top.vx_busy) { saw_busy = true; was_busy = true; }
-        else if (was_busy) { busy_dropped = true; was_busy = false; break; }
-        if ((i % 100000ULL) == 0)
+        else if (was_busy) { busy_dropped = true; was_busy = false; rt_steps = i; break; }
+        if (live && (i % live_every) == 0) {
+            char num[512];
+            std::snprintf(num, sizeof(num), "%s/frames/frame_%05ld.ppm", live_dir.c_str(), live_seq++);
+            dump_fb_ppm(top, 0x00002000ULL, rt_w, rt_h, live_dir + "/frame.ppm", num);
+            write_status(live_dir + "/status.txt", i, fb_aw, top.vx_busy ? 1 : 0, 0);
+        }
+        if (g_verbose && (i % 100000ULL) == 0)
             std::cout << "rt: step=" << i << " busy=" << (top.vx_busy ? 1 : 0)
                       << " fb_writes=" << (unsigned long)fb_aw << " st=" << (unsigned long)(saw_busy ? 1 : 0) << "\n";
     }
@@ -328,6 +398,11 @@ static bool run_raytracer_phase(VAegis& top) {
               << ", within tol(4)=" << within << ", worst_ch_delta=" << worst << " @px " << worst_i
               << ", mean_ch_err=" << (sum_err / double(npix * 3))
               << (rt_ok ? " -> PASS" : " -> FAIL") << "\n";
+    if (live) {
+        dump_fb_ppm(top, fb_base, rt_w, rt_h, live_dir + "/frame.ppm", live_dir + "/frames/final.ppm");
+        write_status(live_dir + "/status.txt", rt_steps, fb_aw, 0, 1);
+        std::cout << "live final frame written\n";
+    }
     return rt_ok;
 }
 

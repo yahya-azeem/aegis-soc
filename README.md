@@ -450,8 +450,32 @@ cd aegis-soc
 make demo-build                 # ~4 min, produces build/vortex-smoke/obj_dir-soc/VAegis
 
 # 2) During the interview -- run-only, no make/verilator/sbt:
-make run-raytrace --open        # ~1m40s; renders and opens docs/raytrace_rtl_live.png
+make live                       # live window + MP4 (recommended)
+make run-raytrace --open        # or the simple run; opens docs/raytrace_rtl_live.png
 ```
+
+### Live, cinematic rendering
+
+`make live` streams the framebuffer **while the kernel is still running on the real RTL** and shows
+it building up in a window, so the audience watches the GPU render instead of waiting for a final
+picture:
+
+- The testbench reads the partially-written framebuffer out of shared HBM3 every 100k cycles and
+  writes it as a PPM frame. No extra cache maintenance is needed: the pixels reach DRAM
+  progressively, so the image fills in on its own.
+- `scripts/live_view.py` displays the frames with a HUD — simulation cycles, pixels written to
+  HBM3, `vx_busy`, and a progress bar — ending with "RENDER COMPLETE (framebuffer verified vs
+  golden)".
+- The same run captures numbered frames and, with ffmpeg, assembles `docs/raytrace_rtl.mp4`
+  (~6 s at 12 fps). It is committed, so you can play it even without running anything.
+
+<p align="center">
+  <img src="docs/raytrace_progression.png" alt="progressive render" width="900"/><br/>
+  <em>Frames captured during one real RTL run (step 0 → sky → gold → green/blue spheres).</em>
+</p>
+
+Both paths use the pre-built binary; nothing is compiled live, and the scene is genuinely produced
+by the real Vortex GPGPU executing the raytracer kernel inside the Aegis SoC.
 
 What the audience sees: the real Vortex GPU executing the raytracer inside the SoC, then
 
@@ -491,8 +515,8 @@ src/test/scala/aegis/         ChiselSim + emit suites
 test/                         raw-Verilator harness
 test/vortex/                  real-Vortex co-sim, raytracer kernel + golden renderer
 vortex/                       vendored upstream Vortex 3.0 RTL (Apache-2.0)
-docs/                         block diagram, floorplan, raytracer renders, Yosys views,
-                              transistor-level cell library + counts
+docs/                         block diagram, floorplan, raytracer renders + live MP4,
+                              Yosys views, transistor-level cell library + counts
 scripts/                      build_demo.sh, run_raytrace.sh, demo_raytrace.sh, simulate.py,
                               render_floorplan.py, render_yosys_summary.py,
                               render_transistors.py, transistor_flow.sh, cmos_skin.svg

@@ -2,7 +2,7 @@ SHELL := /bin/bash
 SBT   ?= sbt
 SBT_RUN = printf '$(1)\nexit\n' | $(SBT)
 
-.PHONY: compile verilog verilog-vortex verilog-yosys test verilator raytrace transistors demo-build run-raytrace demo-raytrace clean bsp idea help
+.PHONY: compile verilog verilog-vortex verilog-yosys test verilator raytrace transistors demo-build run-raytrace live demo-raytrace clean bsp idea help
 
 compile:
 	@$(call SBT_RUN,compile)
@@ -54,6 +54,10 @@ demo-build:
 run-raytrace:
 	bash scripts/run_raytrace.sh
 
+# Live progressive render window + MP4, from the pre-built binary.
+live:
+	bash scripts/run_raytrace.sh --live --video --open
+
 demo-raytrace:
 	bash scripts/demo_raytrace.sh
 
@@ -78,6 +82,7 @@ help:
 	@echo "  transistors    - Transistor-level CMOS views + counts + SPICE netlist"
 	@echo "  demo-build     - One-time Verilator build of the co-simulation"
 	@echo "  run-raytrace   - Run the pre-built raytracer binary (no compilation)"
+	@echo "  live           - Live progressive render window + MP4 (pre-built)"
 	@echo "  demo-raytrace  - Build if needed, then run the raytracer"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  bsp            - Generate BSP config for IDEs"
