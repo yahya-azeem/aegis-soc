@@ -46,6 +46,10 @@ raytrace:
 transistors:
 	bash scripts/transistor_flow.sh
 
+# One-command live demo: render the raytracer on the real Vortex RTL.
+demo-raytrace:
+	bash scripts/demo_raytrace.sh
+
 clean:
 	rm -rf build/ target/ project/target project/project out/
 
@@ -65,5 +69,6 @@ help:
 	@echo "  verilator      - Run the raw-Verilator smoke harness"
 	@echo "  raytrace       - Render the raytracer reference scene to docs/raytrace.png"
 	@echo "  transistors    - Transistor-level CMOS views + counts + SPICE netlist"
+	@echo "  demo-raytrace  - Live Aegis+Vortex co-sim raytracer render"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  bsp            - Generate BSP config for IDEs"
