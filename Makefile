@@ -50,7 +50,7 @@ transistors:
 demo-build:
 	bash scripts/build_demo.sh
 
-# Run the pre-built binary only (no compilation) -- use this in the interview.
+# Run the pre-built binary only (no compilation) -- for live demos.
 run-raytrace:
 	bash scripts/run_raytrace.sh
 

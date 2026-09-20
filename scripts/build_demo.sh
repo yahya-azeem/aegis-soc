@@ -5,7 +5,7 @@
 #
 # Verilator cannot build in a path containing spaces, so if this checkout lives
 # in one we mirror it to $AEGIS_DEMO_DIR (default ~/aegis-demo) and build there.
-# After this completes, use scripts/run_raytrace.sh for the interview.
+# After this completes, use scripts/run_raytrace.sh to run the demo.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

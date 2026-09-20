@@ -9,7 +9,7 @@
 #   --open      open the final PNG when done
 #
 # This never invokes make / verilator / sbt -- it only executes the already
-# built binary, so it is safe to run live in an interview.
+# built binary, so it is safe to run live in a demo or presentation.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

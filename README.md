@@ -28,7 +28,7 @@ GPU inside the SoC and writes its framebuffer into shared memory.
 - [Gate-level views (Yosys)](#gate-level-views-yosys)
 - [Transistor-level (CMOS) view](#transistor-level-cmos-view)
 - [Build and run](#build-and-run)
-- [Running the interview demo (no compilation)](#running-the-interview-demo-no-compilation)
+- [Running the demo (no compilation)](#running-the-demo-no-compilation)
 - [Repository layout](#repository-layout)
 - [Modelled vs. target parameters](#modelled-vs-target-parameters)
 - [Configuration](#configuration)
@@ -67,7 +67,7 @@ CPU↔DRAM datapath, and the real-GPU co-simulation — can be verified end to e
 
 ## Quick start
 
-**Already built? Run the demo with no compilation (recommended for an interview):**
+**Already built? Run the demo with no compilation (recommended for a live demo):**
 
 ```bash
 cd aegis-soc
@@ -440,16 +440,16 @@ make clean
 
 ---
 
-## Running the interview demo (no compilation)
+## Running the demo (no compilation)
 
-Build once beforehand, then run only the binary during the interview. Nothing is compiled live.
+Build once beforehand, then run only the binary during the demo. Nothing is compiled live.
 
 ```bash
-# 1) Do this once, before the interview:
+# 1) Do this once, before the demo:
 cd aegis-soc
 make demo-build                 # ~4 min, produces build/vortex-smoke/obj_dir-soc/VAegis
 
-# 2) During the interview -- run-only, no make/verilator/sbt:
+# 2) During the demo -- run-only, no make/verilator/sbt:
 make live                       # live window + MP4 (recommended)
 make run-raytrace --open        # or the simple run; opens docs/raytrace_rtl_live.png
 ```

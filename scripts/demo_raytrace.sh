@@ -3,7 +3,7 @@
 #
 #   scripts/demo_raytrace.sh [--open]
 #
-# For the interview prefer the run-only path:
+# For a live demo prefer the run-only path:
 #   scripts/build_demo.sh   # do this once, beforehand
 #   scripts/run_raytrace.sh --open
 set -euo pipefail
