@@ -484,6 +484,8 @@ picture:
 - `scripts/live_view.py` displays the frames with a HUD — simulation cycles, pixels written to
   HBM3, `vx_busy`, and a progress bar — ending with "RENDER COMPLETE (framebuffer verified vs
   golden)".
+- The viewer opens on the **high-resolution chess reference render** (`docs/raytrace_chess.png`,
+  built with `make chess`) as a splash, then switches to the live GPU frames as they arrive.
 - The same run captures numbered frames and, with ffmpeg, assembles `docs/raytrace_rtl.mp4`
   (~6 s at 12 fps). It is committed, so you can play it even without running anything.
 
@@ -494,6 +496,10 @@ picture:
 
 Both paths use the pre-built binary; nothing is compiled live, and the scene is genuinely produced
 by the real Vortex GPGPU executing the raytracer kernel inside the Aegis SoC.
+
+**Suggested demo flow:** `make chess` once (host-side hero image, `docs/raytrace_chess.png`), then
+`make live` — the chess render plays as the intro splash, the real GPU takes over and its frame
+builds up live, and it finishes with the pixel-verified PASS.
 
 What the audience sees: the real Vortex GPU executing the raytracer inside the SoC, then
 

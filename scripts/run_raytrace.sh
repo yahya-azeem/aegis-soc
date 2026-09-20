@@ -43,7 +43,7 @@ if [ "$LIVE" = 1 ]; then
     mkdir -p "$LIVE_DIR/frames"
     echo "[run] live viewer: build/live  (scale ${SCALE}x)"
     python3 "$REPO/scripts/live_view.py" --dir "$LIVE_DIR" --scale "$SCALE" --total "$TOTAL" \
-        >/dev/null 2>&1 &
+        --hero "$REPO/docs/raytrace_chess.png" >/dev/null 2>&1 &
     VIEWER_PID=$!
 fi
 

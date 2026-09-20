@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Live viewer for the Aegis raytracer.
 
-Watches DIR/frame.ppm + DIR/status.txt (written by the co-simulation testbench
-while the kernel runs on the real Vortex RTL) and displays the image building
-up in a window, with a HUD.
+Shows a hero reference image until the co-simulation starts streaming frames,
+then switches to the image building up in real time as the kernel runs on the
+real Vortex RTL.
 
-  python3 scripts/live_view.py --dir build/live [--scale 16] [--total 7500000]
+  python3 scripts/live_view.py --dir build/live --hero docs/raytrace_chess.png
 """
 
 import argparse
@@ -34,12 +34,18 @@ def read_status(path):
     return st
 
 
+def fit(img, box):
+    scale = min(box / img.width, box / img.height)
+    return img.resize((max(1, int(img.width * scale)), max(1, int(img.height * scale))), Image.LANCZOS)
+
+
 class Viewer:
-    def __init__(self, directory, scale, total):
+    def __init__(self, directory, scale, total, hero):
         self.dir = directory
         self.scale = scale
         self.total = max(1, total)
         self.last_mtime = None
+        self.showing_live = False
 
         self.root = tk.Tk()
         self.root.title("Aegis SoC  -  real Vortex RTL  -  ray tracing")
@@ -48,8 +54,11 @@ class Viewer:
 
         tk.Label(self.root, text="Aegis SoC", bg=BG, fg=FG,
                  font=("DejaVu Sans", 20, "bold")).pack(anchor="w", padx=16, pady=(14, 0))
-        tk.Label(self.root, text="ray tracer executing on the real Vortex GPGPU RTL  -  writing through shared HBM3",
-                 bg=BG, fg=SUB, font=("DejaVu Sans", 10)).pack(anchor="w", padx=16)
+        self.subtitle = tk.Label(
+            self.root,
+            text="ray tracer executing on the real Vortex GPGPU RTL  -  writing through shared HBM3",
+            bg=BG, fg=SUB, font=("DejaVu Sans", 10))
+        self.subtitle.pack(anchor="w", padx=16)
 
         self.canvas = tk.Label(self.root, bg=BG, bd=0)
         self.canvas.pack(padx=16, pady=12)
@@ -57,9 +66,18 @@ class Viewer:
         self.bar = ttk.Progressbar(self.root, length=640, maximum=100, mode="determinate")
         self.bar.pack(padx=16, pady=(0, 6), fill="x")
 
-        self.hud = tk.Label(self.root, text="waiting for frames...", bg=BG, fg=SUB,
+        self.hud = tk.Label(self.root, text="starting GPU...", bg=BG, fg=SUB,
                             font=("DejaVu Sans Mono", 11), justify="left")
         self.hud.pack(anchor="w", padx=16, pady=(0, 14))
+
+        # hero splash, shown until the first live frame arrives
+        self.hero_photo = None
+        if hero and os.path.exists(hero):
+            try:
+                self.hero_photo = ImageTk.PhotoImage(fit(Image.open(hero).convert("RGB"), 640))
+                self.canvas.configure(image=self.hero_photo)
+            except Exception:
+                self.hero_photo = None
 
         self.photo = None
         self.root.after(100, self.update)
@@ -78,8 +96,16 @@ class Viewer:
                 self.photo = ImageTk.PhotoImage(img)
                 self.canvas.configure(image=self.photo)
                 self.last_mtime = mtime
+                self.showing_live = True
+                self.subtitle.configure(
+                    text="ray tracer executing on the real Vortex GPGPU RTL  -  writing through shared HBM3")
             except Exception:
                 pass
+
+        if not self.showing_live and self.hero_photo is not None:
+            self.hud.configure(text="reference render (host)  -  waiting for the GPU's first frame...", fg=SUB)
+            self.root.after(100, self.update)
+            return
 
         st = read_status(os.path.join(self.dir, "status.txt"))
         pct = min(100.0, 100.0 * st["step"] / self.total) if not st["done"] else 100.0
@@ -98,10 +124,11 @@ class Viewer:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="build/live")
+    ap.add_argument("--hero", default="docs/raytrace_chess.png")
     ap.add_argument("--scale", type=int, default=16)
     ap.add_argument("--total", type=int, default=7_500_000, help="expected retire step (progress bar)")
     a = ap.parse_args()
-    Viewer(a.dir, a.scale, a.total).root.mainloop()
+    Viewer(a.dir, a.scale, a.total, a.hero).root.mainloop()
 
 
 if __name__ == "__main__":
