@@ -209,15 +209,22 @@ static void mem_read_line(VAegis& top, uint64_t addr, uint32_t out[16]) {
 
 // Program the Vortex KMU launch registers for a single-thread kernel run at pc.
 static void program_vx_launch(VAegis& top, uint32_t pc) {
+    // threads to launch (1 = single-lane kernels, 16 = 4 warps x 4 lanes)
+    const char* te = std::getenv("AEGIS_VX_THREADS");
+    int nlaunch = te ? std::atoi(te) : 1;
+    if (nlaunch < 1) nlaunch = 1;
     dcr_write(top, 0x010, pc);   // startup PC
     dcr_write(top, 0x012, pc);   // kernel entry PC
     dcr_write(top, 0x019, 1);    // grid dim X
     dcr_write(top, 0x01A, 1);    // grid dim Y
     dcr_write(top, 0x01B, 1);    // grid dim Z
-    dcr_write(top, 0x016, 1);    // block dim X
+    dcr_write(top, 0x016, nlaunch); // block dim X = threads
     dcr_write(top, 0x017, 1);    // block dim Y
     dcr_write(top, 0x018, 1);    // block dim Z
-    dcr_write(top, 0x01D, 1);    // block size = 1 thread
+    dcr_write(top, 0x01D, nlaunch); // block size -> ceil(n/4) warps
+    dcr_write(top, 0x01E, nlaunch > 4 ? 4 : 0); // warp step X
+    dcr_write(top, 0x01F, 0);    // warp step Y
+    dcr_write(top, 0x020, 0);    // warp step Z
     dcr_write(top, 0x01C, 0);    // lmem size
     dcr_write(top, 0x021, 1);    // cluster dim X
     dcr_write(top, 0x022, 1);    // cluster dim Y
@@ -345,7 +352,7 @@ static bool run_raytracer_phase(VAegis& top) {
     {   uint32_t unused;
         if (!dcr_read(top, 0x000, unused)) std::cout << "rt flush: no rsp seen\n";
     }
-    for (int i = 0; i < 2000; i++) step(top); // let the stack absorb the evictions
+    for (int i = 0; i < 40000; i++) step(top); // let the dcache flush fully drain (bigger framebuffers)
 
     // read back the framebuffer from 0x2000 and compare against the golden
     std::ifstream fg(gold_path, std::ios::binary);
