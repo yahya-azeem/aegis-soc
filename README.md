@@ -399,39 +399,7 @@ yosys -p "read_verilog -sv build/rtl-yosys/Aegis.sv; hierarchy -top CoreMemToHBM
 
 ---
 
-## Transistor-level (CMOS) view
 
-Below gates, the synthesized netlist is mapped to real `nmos`/`pmos` transistor networks with
-`techlib/cmos.v` (combinational cells are exact CMOS networks; registers are the 14-transistor
-transmission-gate master-slave DFF plus enable/reset steering muxes), then rendered with
-`netlistsvg` and the MOSFET skin `scripts/cmos_skin.svg`.
-
-<p align="center">
-  <img src="docs/transistors_cells.png" alt="CMOS standard-cell library at transistor level" width="900"/>
-</p>
-
-`make transistors` regenerates the cell-library figure, the per-block transistor counts
-(`docs/aegis_transistor_counts.txt`) and a transistor-level SPICE netlist
-(`docs/aegis_arbiter_transistors.spice`). Structural transistor counts:
-
-| Block | Transistors |
-|-------|------------:|
-| SplitPrioritizer (arbiter) | 12,870 |
-| CoreMemToHBM | 43,192 |
-| AXIToMemReq | 18,518 |
-| GPUL2Cache | 32,126 |
-| SimtCore | 67,948 |
-| GemmToMem | 204,702 |
-| RiscVICore | 365,008 |
-| HBM3Stack | 4,723,348 |
-| **Total** | **5,467,712** |
-
-`HBM3Stack` dominates because it is the 131,072-bit register file plus its read/decode logic. A
-**full-module** transistor graph is far too dense to render legibly, so the transistor deliverable
-is the cell library figure, the per-block counts and the SPICE netlist; a physical transistor
-*layout* would additionally need a PDK and an OpenLane/OpenROAD flow.
-
----
 
 ## Build and run
 
@@ -626,8 +594,6 @@ golden/scene size, but a different kernel size requires rebuilding `rt_balls.rs`
 VCD; view it with `gtkwave` or `surfer` (neither is installed here — `sudo pacman -S gtkwave`).
 Full-run VCDs are large, so capture short runs only.
 
-**Is this a real PlayStation or a real chip?** No. Aegis is a RISC-V SoC model verified in
-simulation. (ShadPS5, a separate project, is the PS5 compatibility layer.) There is no silicon.
 
 **Does it boot Linux / run real games?** No — the CPU is a small RV32I boot core and the GPU is a
 kernel-level SIMT/Vortex model, not a full driver stack.
